@@ -2,7 +2,8 @@
 import { NextResponse } from "next/server";
 import { initializeTransaction } from "@/lib/paystack";
 import { connectDB } from "@/lib/mongodb";
-import Payment from "@/models/Payment";   // ✅ FIX: Import model
+import Payment from "@/models/Payment";
+import { getCurrentPrice } from '@/lib/priceManager';
 
 export async function POST(request) {
   try {
@@ -17,26 +18,26 @@ export async function POST(request) {
       );
     }
 
-    if (amount < 100) {
-      return NextResponse.json(
-        { status: false, message: "Minimum amount is ₦100" },
-        { status: 400 }
-      );
-    }
+    // Get current price from metadata or use default (ensure it's a number)
+    const currentPricePerKg = Number(metadata?.pricePerKg) || getCurrentPrice();
+    
+    // Calculate units based on current price (FIXED: removed duplicate declaration)
+    const calculatedUnits = (amount / currentPricePerKg).toFixed(2);
 
-    // ✅ Always enforce purchase_type and meter_id
+    // Enrich metadata with price and units
     const enrichedMetadata = {
       ...metadata,
-      purchase_type: "electricity_token",
+      purchase_type: "gas_token",
+      pricePerKg: currentPricePerKg, // Ensure this is a number
+      nairaAmount: amount,
+      units: calculatedUnits
     };
 
     const payload = {
       email,
-      amount: amount * 100, // Paystack requires kobo
+      amount: amount * 100, // Convert to kobo for Paystack
       metadata: enrichedMetadata,
-      callback_url: `${
-        process.env.NEXTAUTH_URL || "http://localhost:3000"
-      }/customer_payment_dashboard`,
+      callback_url: `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/customer_payment_dashboard`
     };
 
     const response = await initializeTransaction(payload);
@@ -48,10 +49,6 @@ export async function POST(request) {
         const existing = await Payment.findOne({ reference });
 
         if (!existing) {
-          const transactionId = `txn_${Date.now()}_${Math.random()
-            .toString(36)
-            .substr(2, 9)}`;
-
           const paymentData = {
             reference,
             user_id: enrichedMetadata?.user_id || null,
@@ -61,34 +58,32 @@ export async function POST(request) {
             amount: amount,
             currency: "NGN",
             channel: "paystack",
-            transaction_id: transactionId,
+            transaction_id: `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             payment_method: "card",
             metadata: {
               ...enrichedMetadata,
               authorization_url: response.data.authorization_url,
-              callback_url: payload.callback_url,
+              callback_url: payload.callback_url
             },
             status: "pending",
-            meter_id: enrichedMetadata?.meterId || enrichedMetadata?.meterNumber || null, // ✅ Fix
+            meter_id: enrichedMetadata?.meterId || enrichedMetadata?.meterNumber || null,
             meter_number: enrichedMetadata?.meterNumber || enrichedMetadata?.meterId || null,
-            initiated_at: new Date(),
+            created_at: new Date(),
+            initiated_at: new Date()
           };
 
           await Payment.create(paymentData);
+          console.log("✅ Payment initialized:", {
+            reference,
+            amount,
+            pricePerKg: currentPricePerKg,
+            units: calculatedUnits
+          });
         }
       } catch (dbError) {
-        console.error("Database error while saving payment:", dbError);
+        console.error("Database error:", dbError);
+        throw dbError;
       }
-    } else {
-      return NextResponse.json(
-        {
-          status: false,
-          message:
-            response.message ||
-            "Failed to initialize transaction with Paystack",
-        },
-        { status: 500 }
-      );
     }
 
     return NextResponse.json(response);
@@ -97,16 +92,9 @@ export async function POST(request) {
     return NextResponse.json(
       {
         status: false,
-        message: error.message || "Failed to initialize transaction",
+        message: error.message || "Failed to initialize transaction"
       },
       { status: 500 }
     );
   }
-}
-
-export async function GET() {
-  return NextResponse.json(
-    { status: false, message: "Method not allowed" },
-    { status: 405 }
-  );
 }

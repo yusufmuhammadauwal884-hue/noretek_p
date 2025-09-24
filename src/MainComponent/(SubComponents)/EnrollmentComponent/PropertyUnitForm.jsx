@@ -76,15 +76,7 @@ export default function PropertyUnitForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // 🔍 Frontend duplicate validation before API call
-    const blockExists = units.some(
-      (u) => u.property_id?._id === form.property_id && u.blockno === form.blockno && u._id !== editId
-    );
-    if (blockExists) {
-      setError(`Block ${form.blockno} already exists in this property`);
-      return;
-    }
-
+    
     const unitExists = units.some(
       (u) =>
         u.property_id?._id === form.property_id &&

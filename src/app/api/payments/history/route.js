@@ -1,11 +1,10 @@
-// /src/app/api/payments/history/route.js
-
-import connectDB, { getConnectionStatus } from "@/lib/mongodb";
+import { connectDB, getConnectionStatus } from "@/lib/mongodb";
 import Payment from "@/models/Payment";
+import Token from "@/models/Token";
 
 export async function GET(request) {
   try {
-    // Check database connection
+    // Check and ensure database connection
     const connectionStatus = getConnectionStatus();
     console.log('Database connection status:', connectionStatus);
     
@@ -18,84 +17,138 @@ export async function GET(request) {
     const customerEmail = searchParams.get('email');
     const page = parseInt(searchParams.get('page')) || 1;
     const limit = parseInt(searchParams.get('limit')) || 10;
+    const sortBy = searchParams.get('sortBy') || 'created_at';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
 
     if (!customerEmail) {
       return new Response(
-        JSON.stringify({ error: 'Customer email is required' }),
-        { 
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        }
+        JSON.stringify({ 
+          success: false,
+          error: 'Customer email is required',
+          code: 'MISSING_EMAIL'
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Fetching payment history for:', customerEmail);
-
-    // Calculate pagination
+    // Calculate skip value for pagination
     const skip = (page - 1) * limit;
 
-    // Find payments for customer with pagination - using correct field name
-    const payments = await Payment.find({ customer_email: customerEmail.toLowerCase().trim() })
-      .sort({ created_at: -1 })
-      .skip(skip)
-      .limit(limit);
+    console.log('Fetching payments for:', {
+      email: customerEmail,
+      page,
+      limit,
+      skip,
+      sortBy,
+      sortOrder
+    });
 
-    // Get total count for pagination
-    const totalPayments = await Payment.countDocuments({ customer_email: customerEmail.toLowerCase().trim() });
-    const totalPages = Math.ceil(totalPayments / limit);
+    // FIXED: Use a simpler approach - get payments and tokens separately
+    const payments = await Payment.find({ 
+      customer_email: customerEmail.toLowerCase().trim() 
+    })
+    .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+
+    const totalPayments = await Payment.countDocuments({ 
+      customer_email: customerEmail.toLowerCase().trim() 
+    });
 
     console.log(`Found ${payments.length} payments out of ${totalPayments} total`);
 
-    // Map to frontend expected field names
-    const formattedPayments = payments.map(payment => ({
-      id: payment._id?.toString(),
-      reference: payment.reference,
-      status: payment.status,
-      amount: payment.amount,
-      currency: payment.currency,
-      customerEmail: payment.customer_email, // Map to frontend expected field
-      customer_email: payment.customer_email, // Also include original
-      createdAt: payment.created_at, // Map to frontend expected field
-      created_at: payment.created_at, // Also include original
-      updatedAt: payment.updated_at, // Map to frontend expected field
-      updated_at: payment.updated_at, // Also include original
-      // Include additional fields that might be useful
-      meter_id: payment.meter_id,
-      meter_number: payment.meter_number,
-      token_code: payment.token_code,
-      payment_method: payment.payment_method,
-      metadata: payment.metadata || {}
-    }));
+    // Get associated tokens for these payments
+    const references = payments.map(p => p.reference);
+    const tokens = await Token.find({ reference: { $in: references } }).lean();
+    
+    // Create a map for quick token lookup
+    const tokenMap = {};
+    tokens.forEach(token => {
+      tokenMap[token.reference] = token;
+    });
 
-    return new Response(
-      JSON.stringify({
-        success: true,
+    // Format payments for response
+    const formattedPayments = payments.map(payment => {
+      const associatedToken = tokenMap[payment.reference];
+      const pricePerKg = Number(payment.metadata?.pricePerKg) || 55;
+      const amount = Number(payment.amount) || 0;
+      const calculatedUnits = amount > 0 ? (amount / pricePerKg).toFixed(2) : '0.00';
+
+      return {
+        id: payment._id?.toString(),
+        reference: payment.reference,
+        status: payment.status,
+        amount: amount,
+        displayAmount: `₦${amount.toLocaleString()}`,
+        currency: payment.currency || 'NGN',
+        customerEmail: payment.customer_email,
+        customerName: payment.customer_name,
+        meterNumber: payment.meter_number,
+        meterId: payment.meter_id,
+        token: associatedToken ? {
+          value: associatedToken.token,
+          units: associatedToken.units || calculatedUnits,
+          pricePerKg: pricePerKg,
+          expiresAt: associatedToken.expiresAt
+        } : null,
+        created_at: payment.created_at || payment.initiated_at,
+        paid_at: payment.paid_at,
+        verified_at: payment.verified_at,
+        metadata: {
+          pricePerKg: pricePerKg,
+          nairaAmount: amount,
+          units: associatedToken?.units || calculatedUnits,
+          status: payment.status
+        }
+      };
+    });
+
+    const totalPages = Math.ceil(totalPayments / limit);
+    const hasMore = page < totalPages;
+
+    const response = {
+      success: true,
+      data: {
         payments: formattedPayments,
         pagination: {
           currentPage: page,
           totalPages,
           totalPayments,
-          hasNext: page < totalPages,
-          hasPrev: page > 1
+          pageSize: limit,
+          hasNextPage: hasMore,
+          hasPreviousPage: page > 1,
         }
-      }),
+      },
+      meta: {
+        timestamp: new Date().toISOString(),
+        query: { sortBy, sortOrder, limit, page }
+      }
+    };
+
+    return new Response(
+      JSON.stringify(response),
       { 
         status: 200,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'private, max-age=300'
+        }
       }
     );
 
   } catch (error) {
     console.error('Payment history error:', error);
+    
     return new Response(
       JSON.stringify({ 
+        success: false,
         error: 'Internal server error',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        code: 'INTERNAL_ERROR',
+        message: process.env.NODE_ENV === 'development' ? error.message : 'An unexpected error occurred',
+        timestamp: new Date().toISOString()
       }),
-      { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }

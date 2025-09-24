@@ -1,3 +1,4 @@
+//src/app/set_price/page.jsx
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -28,8 +29,8 @@ export default function SetPricePage() {
     }
   };
 
-  // Save price to localStorage
-  const savePrice = () => {
+  // Save price to localStorage and update server
+  const savePrice = async () => {
     if (!pricePerKg || pricePerKg <= 0) {
       setMessage("Please enter a valid price greater than 0");
       return;
@@ -39,9 +40,30 @@ export default function SetPricePage() {
     setMessage("");
 
     try {
+      // Save to localStorage
       localStorage.setItem("pricePerKg", pricePerKg.toString());
+      
+      // Update server-side price (optional - for future implementation)
+      try {
+        await fetch('/api/price/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pricePerKg: Number(pricePerKg) })
+        });
+      } catch (serverError) {
+        console.log('Server price update not available, using localStorage only');
+      }
+      
       setMessage("Price updated successfully!");
+      
+      // Dispatch event to update all components
       window.dispatchEvent(new Event('priceUpdated'));
+      
+      // Show success message for 3 seconds
+      setTimeout(() => {
+        setMessage("");
+      }, 3000);
+      
     } catch (error) {
       setMessage("Error saving price: " + error.message);
       console.error("Save error:", error);

@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from "react";
 
 export default function AccountPage() {
+  // Define API_BASE_URL using environment variable
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://47.107.69.132:9400';
+
   // Login state
   const [loginData, setLoginData] = useState({
     userId: "",
@@ -57,19 +60,21 @@ export default function AccountPage() {
       fetchCustomers();
       fetchMeters();
       fetchTariffs();
+      fetchAccounts();
     }
   }, [token]);
 
   // Fetch accounts when token or filters change
   useEffect(() => {
-    if (token) fetchAccounts();
-    // eslint-disable-next-line
+    if (token) {
+      fetchAccounts();
+    }
   }, [token, pagination.pageNumber, pagination.pageSize, searchTerm, searchField, sortField, sortOrder]);
 
   // Fetch customers for dropdown
   const fetchCustomers = async () => {
     try {
-      const res = await fetch("http://47.107.69.132:9400/API/Customer/Read", {
+      const res = await fetch(`${API_BASE_URL}/API/Customer/Read`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -81,9 +86,16 @@ export default function AccountPage() {
           company: "Noretek Energy",
         }),
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData?.message || `HTTP error! status: ${res.status}`);
+      }
+      
       const data = await res.json();
       setCustomerOptions(data?.result?.data || []);
-    } catch {
+    } catch (err) {
+      console.error("Error fetching customers:", err);
       setCustomerOptions([]);
     }
   };
@@ -91,7 +103,7 @@ export default function AccountPage() {
   // Fetch meters for dropdown
   const fetchMeters = async () => {
     try {
-      const res = await fetch("http://47.107.69.132:9400/API/Meter/Read", {
+      const res = await fetch(`${API_BASE_URL}/API/Meter/Read`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -103,9 +115,16 @@ export default function AccountPage() {
           company: "Noretek Energy",
         }),
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData?.message || `HTTP error! status: ${res.status}`);
+      }
+      
       const data = await res.json();
       setMeterOptions(data?.result?.data || []);
-    } catch {
+    } catch (err) {
+      console.error("Error fetching meters:", err);
       setMeterOptions([]);
     }
   };
@@ -113,7 +132,7 @@ export default function AccountPage() {
   // Fetch tariffs for dropdown
   const fetchTariffs = async () => {
     try {
-      const res = await fetch("http://47.107.69.132:9400/API/Tariff/Read", {
+      const res = await fetch(`${API_BASE_URL}/API/Tariff/Read`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -125,21 +144,27 @@ export default function AccountPage() {
           company: "Noretek Energy",
         }),
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData?.message || `HTTP error! status: ${res.status}`);
+      }
+      
       const data = await res.json();
       setTariffOptions(data?.result?.data || []);
-    } catch {
+    } catch (err) {
+      console.error("Error fetching tariffs:", err);
       setTariffOptions([]);
     }
   };
 
-  // Define fetchAccounts function
+  // Fetch accounts with proper error handling
   const fetchAccounts = async () => {
     if (!token) return;
 
     setLoading(true);
     try {
       const payload = {
-        [searchField]: searchTerm,
         createDateRange: [],
         updateDateRange: [],
         pageNumber: pagination.pageNumber,
@@ -150,7 +175,12 @@ export default function AccountPage() {
         sortOrder: sortOrder,
       };
 
-      const res = await fetch("http://47.107.69.132:9400/API/Account/Read", {
+      // Add search field filter if search term exists
+      if (searchTerm) {
+        payload[searchField] = searchTerm;
+      }
+
+      const res = await fetch(`${API_BASE_URL}/API/Account/Read`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -193,7 +223,7 @@ export default function AccountPage() {
     setLoginLoading(true);
     setLoginError("");
     try {
-      const res = await fetch("http://47.107.69.132:9400/API/User/Login", {
+      const res = await fetch(`${API_BASE_URL}/API/User/Login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(loginData),
@@ -231,13 +261,36 @@ export default function AccountPage() {
     setLoading(true);
 
     try {
-      const endpoint = isEditing
-        ? "http://47.107.69.132:9400/API/Account/Update"
-        : "http://47.107.69.132:9400/API/Account/Create";
+      // First, verify the account doesn't already exist (for create operations)
+      if (!isEditing) {
+        const checkRes = await fetch(`${API_BASE_URL}/API/Account/Read`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            pageNumber: 1,
+            pageSize: 1,
+            company: "Noretek Energy",
+            customerId: formData.customerId,
+            meterId: formData.meterId,
+          }),
+        });
 
-      const requestData = isEditing
-        ? { ...formData }
-        : { ...formData };
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          if (checkData?.result?.data?.length > 0) {
+            throw new Error("Account with this Customer ID and Meter ID already exists.");
+          }
+        }
+      }
+
+      const endpoint = isEditing
+        ? `${API_BASE_URL}/API/Account/Update`
+        : `${API_BASE_URL}/API/Account/Create`;
+
+      const requestData = { ...formData };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -306,6 +359,15 @@ export default function AccountPage() {
     }
   };
 
+  const handlePageSizeChange = (e) => {
+    const newSize = Number(e.target.value);
+    setPagination(prev => ({
+      ...prev,
+      pageSize: newSize,
+      pageNumber: 1
+    }));
+  };
+
   const handleEdit = (account) => {
     setFormData({
       customerId: account.customerId ?? "",
@@ -366,21 +428,35 @@ export default function AccountPage() {
         .input-group {
           width: auto;
         }
+        .primaryColor {
+          background-color: #0d6efd;
+          color: white;
+        }
+        .titleColor {
+          color: #0d6efd;
+        }
+        .table-container {
+          overflow-x: auto;
+          width: 100%;
+        }
+        .table {
+          min-width: 1000px;
+        }
       `}</style>
 
       {/* LOGIN FORM */}
       {!token && (
-        <div className="card mb-5 shadow-none">
+        <div className="card mb-5 shadow-sm">
           <div className="card-header primaryColor text-center">
             <h4>Login to Get Token</h4>
           </div>
           <div className="card-body">
             <form onSubmit={handleLoginSubmit}>
               <div className="mb-3">
-                <label className="form-label">User ID:</label>
+                <label className="form-label">User ID</label>
                 <input
                   type="text"
-                  className="form-control"
+                  className="form-control shadow-none"
                   name="userId"
                   value={loginData.userId}
                   onChange={handleLoginChange}
@@ -388,10 +464,10 @@ export default function AccountPage() {
                 />
               </div>
               <div className="mb-3">
-                <label className="form-label">Password:</label>
+                <label className="form-label">Password</label>
                 <input
                   type="password"
-                  className="form-control"
+                  className="form-control shadow-none"
                   name="password"
                   value={loginData.password}
                   onChange={handleLoginChange}
@@ -399,10 +475,10 @@ export default function AccountPage() {
                 />
               </div>
               <div className="mb-3">
-                <label className="form-label">Company:</label>
+                <label className="form-label">Company</label>
                 <input
                   type="text"
-                  className="form-control"
+                  className="form-control shadow-none"
                   name="company"
                   value={loginData.company}
                   onChange={handleLoginChange}
@@ -411,7 +487,7 @@ export default function AccountPage() {
               </div>
               <button
                 type="submit"
-                className="btn btn-primary w-100"
+                className="btn primaryColor w-100"
                 disabled={loginLoading}
               >
                 {loginLoading ? "Logging in..." : "Login"}
@@ -440,16 +516,16 @@ export default function AccountPage() {
                   value={formData.customerId}
                   onChange={handleChange}
                   required
-                  disabled={isEditing}
                 >
                   <option value="">Select Customer</option>
-                  {customerOptions.map((c) => (
-                    <option key={c.customerId} value={c.customerId}>
-                      {c.customerId} - {c.customerName}
+                  {customerOptions.map((customer) => (
+                    <option key={customer.customerId} value={customer.customerId}>
+                      {customer.customerId} - {customer.customerName}
                     </option>
                   ))}
                 </select>
               </div>
+
               <div className="col-md-6">
                 <label className="form-label">Meter ID *</label>
                 <select
@@ -460,25 +536,26 @@ export default function AccountPage() {
                   required
                 >
                   <option value="">Select Meter</option>
-                  {meterOptions.map((m) => (
-                    <option key={m.meterId} value={m.meterId}>
-                      {m.meterId}
+                  {meterOptions.map((meter) => (
+                    <option key={meter.meterId} value={meter.meterId}>
+                      {meter.meterId} - {meter.meterName}
                     </option>
                   ))}
                 </select>
               </div>
+
               <div className="col-md-6">
-                <label className="form-label">Site *</label>
+                <label className="form-label">Site</label>
                 <input
                   type="text"
                   className="form-control shadow-none"
                   name="site"
                   value={formData.site}
                   onChange={handleChange}
-                  required
-                  placeholder="Enter site"
+                  placeholder="Enter site location"
                 />
               </div>
+
               <div className="col-md-6">
                 <label className="form-label">Tariff ID *</label>
                 <select
@@ -489,13 +566,14 @@ export default function AccountPage() {
                   required
                 >
                   <option value="">Select Tariff</option>
-                  {tariffOptions.map((t) => (
-                    <option key={t.tariffId} value={t.tariffId}>
-                      {t.tariffId} - {t.tariffName}
+                  {tariffOptions.map((tariff) => (
+                    <option key={tariff.tariffId} value={tariff.tariffId}>
+                      {tariff.tariffId} - {tariff.tariffName}
                     </option>
                   ))}
                 </select>
               </div>
+
               <div className="col-md-6">
                 <label className="form-label">Company</label>
                 <input
@@ -506,6 +584,7 @@ export default function AccountPage() {
                   readOnly
                 />
               </div>
+
               <div className="col-md-6">
                 <label className="form-label">Remark</label>
                 <input
@@ -514,21 +593,22 @@ export default function AccountPage() {
                   name="remark"
                   value={formData.remark}
                   onChange={handleChange}
-                  placeholder="Optional remark"
+                  placeholder="Optional remarks"
                 />
               </div>
+
               <div className="col-12">
-                <button
-                  type="submit"
+                <button 
+                  type="submit" 
                   className="btn primaryColor w-100"
                   disabled={loading}
                 >
                   {loading ? "Processing..." : (isEditing ? "Update Account" : "Create Account")}
                 </button>
                 {isEditing && (
-                  <button
-                    type="button"
-                    className="btn primaryColor w-100 mt-2"
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary w-100 mt-2"
                     onClick={resetForm}
                     disabled={loading}
                   >
@@ -549,7 +629,7 @@ export default function AccountPage() {
       {/* ACCOUNT TABLE */}
       {token && (
         <div className="card shadow">
-          <div className="card-header primaryColor ">
+          <div className="card-header primaryColor text-white">
             <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
               <h5 className="mb-0">Account Management</h5>
               <div className="d-flex flex-wrap gap-2">
@@ -563,15 +643,16 @@ export default function AccountPage() {
                       <option value="customerId">Customer ID</option>
                       <option value="meterId">Meter ID</option>
                       <option value="tariffId">Tariff ID</option>
+                      <option value="site">Site</option>
                     </select>
                     <input
                       type="text"
                       className="form-control shadow-none"
-                      placeholder={`Search by ${searchField.replace(/([A-Z])/g, ' $1').trim()}`}
+                      placeholder="Search accounts..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
-                    <button className="btn titleColor bg-light border-opacity-50 border" type="submit">
+                    <button className="btn titleColor bg-light border-opacity-50 border" type="submit" disabled={loading}>
                       Search
                     </button>
                   </div>
@@ -584,83 +665,84 @@ export default function AccountPage() {
                     setSortField(field);
                     setSortOrder(order);
                   }}
+                  disabled={loading}
                 >
                   <option value="customerId:asc">Sort by Customer ID (A-Z)</option>
                   <option value="customerId:desc">Sort by Customer ID (Z-A)</option>
                   <option value="meterId:asc">Sort by Meter ID (A-Z)</option>
                   <option value="meterId:desc">Sort by Meter ID (Z-A)</option>
-                  <option value="tariffId:asc">Sort by Tariff ID (A-Z)</option>
-                  <option value="tariffId:desc">Sort by Tariff ID (Z-A)</option>
-                  <option value="createDate:desc">Newest First</option>
-                  <option value="createDate:asc">Oldest First</option>
+                  <option value="site:asc">Sort by Site (A-Z)</option>
+                  <option value="site:desc">Sort by Site (Z-A)</option>
                 </select>
               </div>
             </div>
           </div>
-          <div className="card-body table-responsive">
+          <div className="card-body">
             {loading ? (
               <div className="text-center my-5">
-                <div className="spinner-border titleColor" role="status">
+                <div className="spinner-border text-primary" role="status">
                   <span className="visually-hidden">Loading...</span>
                 </div>
               </div>
             ) : (
               <>
-                <table className="table table-bordered table-hover">
-                  <thead>
-                    <tr>
-                      <th onClick={() => handleSort("customerId")} className="cursor-pointer titleColor">
-                        Customer ID {sortField === "customerId" && (
-                          <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
-                        )}
-                      </th>
-                      <th onClick={() => handleSort("meterId")} className="cursor-pointer titleColor">
-                        Meter ID {sortField === "meterId" && (
-                          <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
-                        )}
-                      </th>
-                      <th className=" titleColor">Site</th>
-                      <th onClick={() => handleSort("tariffId")} className="cursor-pointer titleColor">
-                        Tariff ID {sortField === "tariffId" && (
-                          <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
-                        )}
-                      </th>
-                      <th className=" titleColor">Remark</th>
-                      <th className=" titleColor">Company</th>
-                      <th className=" titleColor">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {accounts.length > 0 ? (
-                      accounts.map((account, index) => (
-                        <tr key={index}>
-                          <td>{account.customerId}</td>
-                          <td>{account.meterId}</td>
-                          <td>{account.site}</td>
-                          <td>{account.tariffId}</td>
-                          <td>{account.remark}</td>
-                          <td>{account.company}</td>
-                          <td>
-                            <button
-                              className="btn btn-sm btn-warning"
-                              onClick={() => handleEdit(account)}
-                              disabled={loading}
-                            >
-                              Edit
-                            </button>
+                <div className="table-container">
+                  <table className="table table-bordered table-hover">
+                    <thead>
+                      <tr>
+                        <th onClick={() => handleSort("customerId")} className="cursor-pointer titleColor">
+                          Customer ID {sortField === "customerId" && (
+                            <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
+                          )}
+                        </th>
+                        <th onClick={() => handleSort("meterId")} className="cursor-pointer titleColor">
+                          Meter ID {sortField === "meterId" && (
+                            <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
+                          )}
+                        </th>
+                        <th onClick={() => handleSort("site")} className="cursor-pointer titleColor">
+                          Site {sortField === "site" && (
+                            <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
+                          )}
+                        </th>
+                        <th className="titleColor">Tariff ID</th>
+                        <th className="titleColor">Company</th>
+                        <th className="titleColor">Remark</th>
+                        <th className="titleColor">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {accounts.length > 0 ? (
+                        accounts.map((account, index) => (
+                          <tr key={index}>
+                            <td><strong>{account.customerId}</strong></td>
+                            <td>{account.meterId}</td>
+                            <td>{account.site || "-"}</td>
+                            <td>{account.tariffId}</td>
+                            <td>{account.company}</td>
+                            <td>{account.remark || "-"}</td>
+                            <td>
+                              <button
+                                className="btn btn-sm btn-warning"
+                                onClick={() => handleEdit(account)}
+                                disabled={loading}
+                              >
+                                Edit
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="7" className="text-center text-muted py-4">
+                            No accounts found
                           </td>
                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="7" className="text-center text-muted display-5  py-4">
-                          No accounts found
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                
                 {/* Pagination controls */}
                 <div className="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-3">
                   <div className="text-nowrap">
@@ -670,7 +752,7 @@ export default function AccountPage() {
                   </div>
                   <div className="btn-group">
                     <button
-                      className="btn  primaryColor"
+                      className="btn primaryColor"
                       onClick={() => handlePageChange(pagination.pageNumber - 1)}
                       disabled={pagination.pageNumber === 1 || loading}
                     >
@@ -680,7 +762,7 @@ export default function AccountPage() {
                       Page {pagination.pageNumber} of {pagination.totalPages}
                     </span>
                     <button
-                      className="btn  primaryColor"
+                      className="btn primaryColor"
                       onClick={() => handlePageChange(pagination.pageNumber + 1)}
                       disabled={pagination.pageNumber === pagination.totalPages || loading}
                     >
@@ -691,11 +773,7 @@ export default function AccountPage() {
                     <select
                       className="form-select"
                       value={pagination.pageSize}
-                      onChange={(e) => setPagination(prev => ({
-                        ...prev,
-                        pageSize: Number(e.target.value),
-                        pageNumber: 1
-                      }))}
+                      onChange={handlePageSizeChange}
                       disabled={loading}
                     >
                       <option value="5">5 per page</option>

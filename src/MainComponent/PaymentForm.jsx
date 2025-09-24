@@ -1,12 +1,38 @@
+//src/MainComponent/PaymentForm.jsx
 "use client";
 import { useState, useEffect } from "react";
 
-export default function PaymentForm({ userEmail, userId, presetMeter }) {
+export default function PaymentForm({ userEmail, userId, presetMeter, pricePerKg = 1500 }) {
   const [amount, setAmount] = useState("");
   const [meterNumber, setMeterNumber] = useState(presetMeter || "");
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState(null);
   const [fetchingMeter, setFetchingMeter] = useState(!presetMeter);
+  const [currentPricePerKg, setCurrentPricePerKg] = useState(pricePerKg);
+
+  // Load current price and listen for updates
+  useEffect(() => {
+    const loadPrice = () => {
+      const savedPrice = localStorage.getItem("pricePerKg");
+      if (savedPrice) {
+        setCurrentPricePerKg(parseFloat(savedPrice));
+      }
+    };
+
+    // Load price initially
+    loadPrice();
+
+    // Listen for price updates
+    const handlePriceUpdate = () => {
+      loadPrice();
+    };
+
+    window.addEventListener('priceUpdated', handlePriceUpdate);
+    
+    return () => {
+      window.removeEventListener('priceUpdated', handlePriceUpdate);
+    };
+  }, []);
 
   // Fetch user data including meter number only if preset not passed
   useEffect(() => {
@@ -68,13 +94,21 @@ export default function PaymentForm({ userEmail, userId, presetMeter }) {
         }
       }
 
+      // Calculate units based on current price
+      const calculatedUnits = (amount / currentPricePerKg).toFixed(2);
+
       const response = await fetch("/api/payments/initialize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
           amount,
-          metadata: { meterNumber: meterNumber.trim(), user_id: userId },
+          metadata: { 
+            meterNumber: meterNumber.trim(), 
+            user_id: userId,
+            pricePerKg: currentPricePerKg,
+            units: calculatedUnits
+          },
         }),
       });
 
@@ -115,13 +149,27 @@ export default function PaymentForm({ userEmail, userId, presetMeter }) {
     }
   };
 
+  // Calculate units for display
+  const calculateUnits = (amount) => {
+    if (!amount || amount < 100) return "0.00";
+    return (amount / currentPricePerKg).toFixed(2);
+  };
+
   return (
     <div className="card shadow-sm">
       <div className="card-header bColor">
-        <h5 className="mb-0">Purchase Meter Token</h5>
+        <h5 className="mb-0">Purchase Gas Token</h5>
       </div>
       <div className="card-body">
         <form onSubmit={handleSubmit}>
+          {/* Price Information */}
+          <div className="alert alert-info mb-3">
+            <div className="d-flex justify-content-between align-items-center">
+              <span><strong>Current Price:</strong> ₦{currentPricePerKg} per KG</span>
+              <span><strong>Rate:</strong> ₦{currentPricePerKg} = 1.0 KG</span>
+            </div>
+          </div>
+
           {/* Email */}
           <div className="mb-3">
             <label className="form-label">Email:</label>
@@ -142,7 +190,7 @@ export default function PaymentForm({ userEmail, userId, presetMeter }) {
                   type="text"
                   className="form-control shadow-none"
                   value={meterNumber}
-                  readOnly // 🔒 makes sure it cannot be typed/changed
+                  readOnly
                   required
                 />
                 {userData?.meterId && (
@@ -165,9 +213,13 @@ export default function PaymentForm({ userEmail, userId, presetMeter }) {
               min="100"
               step="50"
               required
-              placeholder="Enter amount"
+              placeholder={`Enter amount (₦${currentPricePerKg} = 1.0 KG)`}
             />
-            <div className="form-text titleColor"></div>
+            <div className="form-text titleColor">
+              {amount && amount >= 100 && (
+                <span>You will receive: <strong>{calculateUnits(amount)} KG</strong> of gas</span>
+              )}
+            </div>
           </div>
 
           {/* Submit */}

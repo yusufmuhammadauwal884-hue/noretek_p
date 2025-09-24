@@ -26,60 +26,58 @@ function PaymentSuccessContent() {
 
         console.log('✅ Payment successful with reference:', reference);
 
-        // Verify payment and get details
-        const verifyResponse = await fetch(`/api/payments/verify?reference=${reference}`);
+        // FIXED: Verify payment and get details WITH initial=true flag ONLY ONCE
+        const verifyResponse = await fetch(`/api/payments/verify?reference=${reference}&initial=true`);
         const verifyData = await verifyResponse.json();
 
         if (verifyResponse.ok && verifyData.status && verifyData.data.status === 'success') {
-          // Get complete payment details with token information
-          const paymentDetailsResponse = await fetch(`/api/payments/details?reference=${reference}`);
-          const paymentDetails = await paymentDetailsResponse.json();
+          const payment = verifyData.data;
+          
+          const paymentInfo = {
+            reference: reference,
+            amount: payment.amount,
+            date: new Date(payment.paid_at || payment.created_at).toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            }),
+            status: 'success',
+            token: payment.token || payment.metadata?.token,
+            meterNumber: payment.meter_number || payment.metadata?.meterNumber,
+            units: payment.metadata?.units || (payment.amount / 55).toFixed(2)
+          };
 
-          if (paymentDetailsResponse.ok && paymentDetails.payment) {
-            const payment = paymentDetails.payment;
-            
-            const paymentInfo = {
-              reference: reference,
-              amount: payment.amount,
-              date: new Date(payment.paid_at || payment.createdAt).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              }),
-              status: 'success',
-              token: payment.metadata?.token,
-              meterNumber: payment.metadata?.meter_number || payment.metadata?.meterNumber,
-              units: payment.metadata?.units || (payment.amount / 55).toFixed(2)
-            };
+          setPaymentData(paymentInfo);
 
-            setPaymentData(paymentInfo);
-
-            // Store token info in localStorage for dashboard access
-            if (payment.metadata?.token) {
-              localStorage.setItem('lastToken', payment.metadata.token);
-              localStorage.setItem('lastMeter', paymentInfo.meterNumber);
-              localStorage.setItem('lastUnits', paymentInfo.units);
-              localStorage.setItem('lastAmount', payment.amount);
-              localStorage.setItem('lastReference', reference);
-            }
-
-            // Start countdown for automatic redirect
-            const countdownInterval = setInterval(() => {
-              setCountdown(prev => {
-                if (prev <= 1) {
-                  clearInterval(countdownInterval);
-                  redirectToDashboard();
-                  return 0;
-                }
-                return prev - 1;
-              });
-            }, 1000);
-
-          } else {
-            setError('Could not retrieve payment details. Your payment was successful, but we could not fetch the details.');
+          // Store token info in localStorage for dashboard access
+          if (paymentInfo.token) {
+            localStorage.setItem('lastToken', paymentInfo.token);
+            localStorage.setItem('lastMeter', paymentInfo.meterNumber);
+            localStorage.setItem('lastUnits', paymentInfo.units);
+            localStorage.setItem('lastAmount', payment.amount);
+            localStorage.setItem('lastReference', reference);
           }
+
+          // Update payment history in localStorage to trigger dashboard refresh
+          const userEmail = localStorage.getItem('userEmail');
+          if (userEmail) {
+            localStorage.setItem('paymentHistoryUpdate', Date.now().toString());
+          }
+
+          // Start countdown for automatic redirect
+          const countdownInterval = setInterval(() => {
+            setCountdown(prev => {
+              if (prev <= 1) {
+                clearInterval(countdownInterval);
+                redirectToDashboard();
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+
         } else {
           setError(verifyData.message || 'Payment verification failed. Please contact support with your reference: ' + reference);
         }
