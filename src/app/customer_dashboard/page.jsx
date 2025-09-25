@@ -39,6 +39,17 @@ export default function UserDashboard() {
   const router = useRouter();
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
+  // Helper to get proper ticket date
+  const getTicketDate = (ticket) => {
+    const dateStr = ticket.created_at || ticket.createdAt;
+    if (!dateStr) return "N/A";
+    try {
+      return new Date(dateStr).toLocaleDateString();
+    } catch {
+      return "Invalid date";
+    }
+  };
+
   // 🔹 Fetch user profile
   useEffect(() => {
     const fetchUserData = async () => {
@@ -78,6 +89,7 @@ export default function UserDashboard() {
     };
 
     fetchUserData();
+    // eslint-disable-next-line
   }, []);
 
   const refreshPayments = async (email) => {
@@ -175,7 +187,11 @@ export default function UserDashboard() {
     setIsLoading(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
       setSaveStatus("password_changed");
       setTimeout(() => setSaveStatus(""), 3000);
     } catch {
@@ -228,7 +244,10 @@ export default function UserDashboard() {
       {/* ✅ Top Navbar */}
       <nav className="navbar navbar-expand-lg navbar-dark primaryColor">
         <div className="container-fluid d-flex align-items-center justify-content-between flex-wrap px-2">
-          <button className="btn text-white me-3 d-lg-none" onClick={toggleSidebar}>
+          <button
+            className="btn text-white me-3 d-lg-none"
+            onClick={toggleSidebar}
+          >
             <i className="bi bi-list"></i>
           </button>
           <a className="navbar-brand text-white me-auto" href="#">
@@ -266,7 +285,9 @@ export default function UserDashboard() {
                   <a
                     href="#"
                     className={`nav-link text-white ${
-                      activeSection === section ? "active bg-secondary rounded" : ""
+                      activeSection === section
+                        ? "active bg-secondary rounded"
+                        : ""
                     }`}
                     onClick={() => setActiveSection(section)}
                   >
@@ -302,7 +323,9 @@ export default function UserDashboard() {
                     <div className="card-body d-flex align-items-center">
                       <i className="bi bi-lightning-charge fs-1 titleColor me-3"></i>
                       <div>
-                        <h5 className="card-title mb-1 titleColor">My Meter ID</h5>
+                        <h5 className="card-title mb-1 titleColor">
+                          My Meter ID
+                        </h5>
                         <p className="card-text text-muted">
                           {userData.meterId || "Not assigned"}
                         </p>
@@ -315,7 +338,9 @@ export default function UserDashboard() {
                     <div className="card-body d-flex align-items-center">
                       <i className="bi bi-credit-card fs-1 titleColor me-3"></i>
                       <div>
-                        <h5 className="card-title mb-1 titleColor">Buy Token</h5>
+                        <h5 className="card-title mb-1 titleColor">
+                          Buy Token
+                        </h5>
                         <button
                           className="btn primaryColor mt-2"
                           onClick={navigateToPaymentDashboard}
@@ -475,8 +500,7 @@ export default function UserDashboard() {
                                 {t.status}
                               </span>
                             </td>
-                           <td>{new Date(t.createdAt).toLocaleDateString()}</td>
-
+                            <td>{getTicketDate(t)}</td>
                             <td>
                               <button
                                 className="btn btn-sm btn-outline-primary"
@@ -574,7 +598,10 @@ export default function UserDashboard() {
                             className="form-control"
                             value={userData.phone}
                             onChange={(e) =>
-                              setUserData({ ...userData, phone: e.target.value })
+                              setUserData({
+                                ...userData,
+                                phone: e.target.value,
+                              })
                             }
                           />
                         </div>
@@ -791,7 +818,9 @@ export default function UserDashboard() {
                         </div>
                       ))}
                       {comments.length === 0 && (
-                        <p className="text-muted text-center">No comments yet</p>
+                        <p className="text-muted text-center">
+                          No comments yet
+                        </p>
                       )}
                     </div>
 

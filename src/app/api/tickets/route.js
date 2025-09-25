@@ -1,18 +1,17 @@
-// src/app/api/tickets/route.js
 import connectDB from "@/lib/mongodb";
 import SupportTicket from "@/models/supportTicket";
 import { NextResponse } from "next/server";
 
-// src/app/api/tickets/route.js
+// GET tickets
 export async function GET(req) {
   try {
     await connectDB();
     const { searchParams } = new URL(req.url);
-    const email = searchParams.get("email"); // ✅ fetch email from query
+    const email = searchParams.get("email"); // fetch email from query
 
     let filter = {};
     if (email) {
-      filter.created_by = email.toLowerCase().trim(); // ✅ only tickets by this email
+      filter.created_by = email.toLowerCase().trim(); // only tickets by this email
     }
 
     const tickets = await SupportTicket.find(filter).lean();
@@ -28,9 +27,9 @@ export async function GET(req) {
         status: t.status,
         created_by: t.created_by,
         meter_id: t.meter_id,
-        createdAt: t.created_at,
-        updatedAt: t.updated_at,
-        closedAt: t.closed_at,
+        created_at: t.created_at ? new Date(t.created_at).toISOString() : null,
+        updated_at: t.updated_at ? new Date(t.updated_at).toISOString() : null,
+        closed_at: t.closed_at ? new Date(t.closed_at).toISOString() : null,
       })),
     });
   } catch (err) {
@@ -38,20 +37,19 @@ export async function GET(req) {
   }
 }
 
-
-
-// ✅ POST (create ticket)
+// POST (create ticket)
 export async function POST(request) {
   try {
     await connectDB();
     const body = await request.json();
-    const { _id, created_by, meter_id, ...cleanBody } = body;
+    const { _id, created_by, meter_id, status, ...cleanBody } = body;
 
-    // Always ensure created_by and meter_id are set
+    // Always ensure created_by and meter_id are set, and default status to Pending
     const ticket = await SupportTicket.create({
       ...cleanBody,
       created_by: created_by || "anonymous",
       meter_id: meter_id || "Not assigned",
+      status: status || "Pending", // <-- Always default to Pending if not set
     });
 
     return NextResponse.json({ success: true, ticket }, { status: 201 });
@@ -60,18 +58,33 @@ export async function POST(request) {
   }
 }
 
-// ✅ PUT (update ticket)
+// PUT (update ticket, including resolving)
 export async function PUT(request) {
   try {
     await connectDB();
     const body = await request.json();
-    const { _id, ...updateData } = body;
+    const { id, _id, status, ...updateData } = body;
+    const ticketId = id || _id; // support both id and _id for flexibility
 
-    if (!_id) {
+    if (!ticketId) {
       return NextResponse.json({ error: "Ticket ID is required" }, { status: 400 });
     }
 
-    const ticket = await SupportTicket.findByIdAndUpdate(_id, updateData, { new: true });
+    // If status is being set to Resolved, also set closedAt timestamp
+    if (status === "Resolved") {
+      updateData.status = "Resolved";
+      updateData.closedAt = new Date();
+    }
+    // Allow status update and any other updates
+    if (status && status !== "Resolved") {
+      updateData.status = status;
+    }
+
+    const ticket = await SupportTicket.findByIdAndUpdate(
+      ticketId,
+      updateData,
+      { new: true }
+    );
     if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 
     return NextResponse.json({ success: true, ticket });
@@ -80,7 +93,7 @@ export async function PUT(request) {
   }
 }
 
-// ✅ DELETE (delete ticket)
+// DELETE (delete ticket)
 export async function DELETE(request) {
   try {
     await connectDB();

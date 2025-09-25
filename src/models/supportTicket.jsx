@@ -1,4 +1,3 @@
-// src/models/supportTicket.js
 import mongoose from "mongoose";
 
 const SupportTicketSchema = new mongoose.Schema(
@@ -20,8 +19,8 @@ const SupportTicketSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Open", "In Progress", "On Hold", "Resolved", "Closed"],
-      default: "Open",
+      enum: ["Pending", "Open", "In Progress", "On Hold", "Resolved", "Closed"],
+      default: "Pending",
     },
 
     created_by: { type: String }, // store user email or id

@@ -22,7 +22,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState({
     totalTickets: 0,
     pendingTickets: 0,
-    openTickets: 0,
+    inprogressTickets: 0,
     resolvedTickets: 0,
   });
 
@@ -35,6 +35,17 @@ export default function Dashboard() {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
+
+  // === Toast State ===
+  const [toast, setToast] = useState({ show: false, message: "", variant: "" });
+
+  // === Auto-hide Toast ===
+  useEffect(() => {
+    if (toast.show) {
+      const timer = setTimeout(() => setToast({ ...toast, show: false }), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   const decodeJwtPayload = (token) => {
     try {
@@ -163,7 +174,7 @@ export default function Dashboard() {
       pendingTickets: tickets.filter(
         (t) => t.status === "Pending" || t.status === "Not Opened"
       ).length,
-      openTickets: tickets.filter(
+      inprogressTickets: tickets.filter(
         (t) => t.status === "Open" || t.status === "In Progress"
       ).length,
       resolvedTickets: tickets.filter(
@@ -171,6 +182,59 @@ export default function Dashboard() {
       ).length,
     });
   }, [tickets, comments]);
+
+  // === RESOLVE TICKET HANDLER ===
+  const handleResolveTicket = async (ticketId) => {
+    try {
+      const res = await fetch("/api/tickets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: ticketId, status: "Resolved" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setToast({ show: true, message: "Ticket marked as Resolved!", variant: "success" });
+        setSelectedTicket(prev => ({ ...prev, status: "Resolved" }));
+        fetchTickets(); // refresh ticket list and stats
+      } else {
+        setToast({ show: true, message: data.message || "Failed to resolve ticket", variant: "danger" });
+      }
+    } catch {
+      setToast({ show: true, message: "Network error", variant: "danger" });
+    }
+  };
+
+  // === HANDLE TICKET VIEW/PROGRESS ===
+  const handleViewTicket = async (ticket) => {
+    // If not already "In Progress" or "Resolved", set to "In Progress"
+    if (ticket.status === "Pending" || ticket.status === "Not Opened") {
+      try {
+        const res = await fetch("/api/tickets", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: ticket._id, status: "In Progress" }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setTickets((prev) =>
+            prev.map((t) =>
+              t._id === ticket._id ? { ...t, status: "In Progress" } : t
+            )
+          );
+          setSelectedTicket({ ...ticket, status: "In Progress" });
+        } else {
+          setToast({ show: true, message: data.message || "Failed to update status", variant: "danger" });
+          setSelectedTicket(ticket);
+        }
+      } catch {
+        setToast({ show: true, message: "Network error", variant: "danger" });
+        setSelectedTicket(ticket);
+      }
+    } else {
+      setSelectedTicket(ticket);
+    }
+    fetchComments(ticket.ticket_id || ticket._id);
+  };
 
   if (loading) {
     return (
@@ -183,6 +247,24 @@ export default function Dashboard() {
 
   return (
     <div className="container mt-4">
+      {/* === Toast Message === */}
+      {toast.show && (
+        <div
+          className={`toast show align-items-center text-bg-${toast.variant} border-0 position-fixed top-0 end-0 m-3`}
+          style={{ zIndex: 9999, minWidth: 250 }}
+          role="alert"
+        >
+          <div className="d-flex">
+            <div className="toast-body">{toast.message}</div>
+            <button
+              type="button"
+              className="btn-close btn-close-white me-2 m-auto"
+              onClick={() => setToast({ ...toast, show: false })}
+            ></button>
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <div className="card-header bg-dark text-white">
           <h2 className="mb-0">Support Dashboard</h2>
@@ -194,7 +276,7 @@ export default function Dashboard() {
         <div className="card-body">
           {/* Stats */}
           <div className="row mb-4">
-            <div className="col-md-2 col-6 mb-4">
+            <div className="col-md-3 col-6 mb-4">
               <div className="card text-center border-primary">
                 <div className="card-body">
                   <h3 className="text-primary">{stats.totalTickets}</h3>
@@ -202,7 +284,7 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="col-md-2 col-6 mb-4">
+            <div className="col-md-3 col-6 mb-4">
               <div className="card text-center border-warning">
                 <div className="card-body">
                   <h3 className="text-warning">{stats.pendingTickets}</h3>
@@ -210,15 +292,15 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="col-md-2 col-6 mb-4">
+            <div className="col-md-3 col-6 mb-4">
               <div className="card text-center border-danger">
                 <div className="card-body">
-                  <h3 className="text-danger">{stats.openTickets}</h3>
-                  <span className="text-muted">Open</span>
+                  <h3 className="text-danger">{stats.inprogressTickets}</h3>
+                  <span className="text-muted">In Progress</span>
                 </div>
               </div>
             </div>
-            <div className="col-md-2 col-6 mb-4">
+            <div className="col-md-3 col-6 mb-4">
               <div className="card text-center border-success">
                 <div className="card-body">
                   <h3 className="text-success">{stats.resolvedTickets}</h3>
@@ -260,10 +342,7 @@ export default function Dashboard() {
               tickets={tickets}
               onEdit={(ticket) => console.log("Edit:", ticket)}
               onDelete={(id) => console.log("Delete ticket:", id)}
-              onViewComments={(ticket) => {
-                setSelectedTicket(ticket);
-                fetchComments(ticket.ticket_id || ticket._id);
-              }}
+              onViewComments={handleViewTicket}
             />
           )}
 
@@ -428,6 +507,15 @@ export default function Dashboard() {
               </div>
 
               <div className="modal-footer">
+                {/* Show Resolved button only if not already resolved */}
+                {selectedTicket.status !== "Resolved" && (
+                  <button
+                    className="btn btn-success me-auto"
+                    onClick={() => handleResolveTicket(selectedTicket.ticket_id || selectedTicket._id)}
+                  >
+                    Mark as Resolved
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn btn-secondary"
