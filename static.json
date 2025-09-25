@@ -1,0 +1,12 @@
+{
+  "routes": {
+    "/api/*": {
+      "origin": "http://47.107.69.132:9400",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
+    }
+  }
+}

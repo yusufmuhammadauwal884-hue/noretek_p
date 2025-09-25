@@ -3,9 +3,6 @@
 import React, { useState, useEffect } from "react";
 
 export default function CustomerPage() {
-  // Define API_BASE_URL using environment variable
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://47.107.69.132:9400';
-
   // Login state
   const [loginData, setLoginData] = useState({
     userId: "",
@@ -29,16 +26,25 @@ export default function CustomerPage() {
     certifiNo: "",
     remark: "",
     company: "Noretek Energy",
-    capturedBy: ""
+    
+    // Property fields
+    property_id: "",
+    unit_id: "",
+    property_name: "",
+    unit_description: "",
+    blockno: "",
+    meter_id: ""
   });
   const [formMessage, setFormMessage] = useState("");
   const [formMessageType, setFormMessageType] = useState("");
 
-  // Property search state
-  const [propertySearch, setPropertySearch] = useState("");
-  const [propertyResults, setPropertyResults] = useState([]);
-  const [selectedProperty, setSelectedProperty] = useState(null);
+  // Property and unit state
+  const [properties, setProperties] = useState([]);
+  const [filteredUnits, setFilteredUnits] = useState([]);
   const [propertyLoading, setPropertyLoading] = useState(false);
+
+  // UserList customers state - for auto-filling data
+  const [userListCustomers, setUserListCustomers] = useState([]);
 
   // Table state
   const [customers, setCustomers] = useState([]);
@@ -76,6 +82,7 @@ export default function CustomerPage() {
     if (token) {
       fetchCustomers();
     }
+    // eslint-disable-next-line
   }, [token, pagination.pageNumber, pagination.pageSize, searchTerm, sortField, sortOrder]);
 
   // Auto-generate customer ID when token is available and not editing
@@ -95,61 +102,117 @@ export default function CustomerPage() {
     }
   }, [formMessageType, isEditing, autoRefreshEnabled]);
 
-  // Search properties based on property unit
-  const searchProperties = async (searchText) => {
-    if (!searchText || searchText.length < 2) {
-      setPropertyResults([]);
-      return;
+  // Fetch properties, units, and userList customers when token is available
+  useEffect(() => {
+    if (token) {
+      fetchPropertiesAndUnits();
+      fetchUserListCustomers();
     }
+  }, [token]);
 
-    setPropertyLoading(true);
+  // Fetch userList customers for auto-filling
+  const fetchUserListCustomers = async () => {
     try {
       const res = await fetch("/api/customer-signup-api");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          const filteredProperties = data.customers.filter(customer => {
-            const unitDescription = customer.propertyUnit?.unit_description || "";
-            const blockNo = customer.propertyUnit?.blockno || "";
-            const customerName = customer.name || "";
-            const phone = customer.phone || "";
-            
-            const searchLower = searchText.toLowerCase();
-            return (
-              unitDescription.toLowerCase().includes(searchLower) ||
-              blockNo.toLowerCase().includes(searchLower) ||
-              customerName.toLowerCase().includes(searchLower) ||
-              phone.includes(searchText)
-            );
-          });
-          setPropertyResults(filteredProperties);
-        }
+      const data = await res.json();
+      if (data.success) {
+        setUserListCustomers(data.customers || []);
       }
     } catch (error) {
-      console.error("Error searching properties:", error);
-    } finally {
-      setPropertyLoading(false);
+      console.error("Error fetching user list customers:", error);
     }
   };
 
-  // Handle property selection
-  const handlePropertySelect = (property) => {
-    setSelectedProperty(property);
-    
-    const unitInfo = property.propertyUnit 
-      ? `${property.propertyUnit.unit_description} - ${property.propertyUnit.blockno}`
-      : "No unit assigned";
-    setPropertySearch(unitInfo);
-    setPropertyResults([]);
-    
-    setFormData(prev => ({
-      ...prev,
-      customerName: property.name || "",
-      phone: property.phone || "",
-      address: property.address || "",
-      certifiName: property.certifiName || "",
-      certifiNo: property.certifiNo || "",
-    }));
+  // Auto-populate property details when property is selected
+  useEffect(() => {
+    if (formData.property_id) {
+      const selectedProperty = properties.find(p => p._id === formData.property_id);
+      if (selectedProperty) {
+        setFormData(prev => ({
+          ...prev,
+          property_name: selectedProperty.property_name || ""
+        }));
+        
+        // Filter units for the selected property
+        const unitsForProperty = properties
+          .filter(p => p._id === formData.property_id)
+          .flatMap(p => p.units || []);
+        setFilteredUnits(unitsForProperty);
+        
+        // Reset unit selection when property changes
+        setFormData(prev => ({ 
+          ...prev, 
+          unit_id: "", 
+          unit_description: "", 
+          blockno: "", 
+          meter_id: "" 
+        }));
+      }
+    }
+  }, [formData.property_id, properties]);
+
+  // Auto-populate customer details when unit is selected - USING USERLIST DATA
+  useEffect(() => {
+    if (formData.unit_id) {
+      const selectedUnit = filteredUnits.find(u => u._id === formData.unit_id);
+      if (selectedUnit) {
+        // First set the basic unit details
+        setFormData(prev => ({
+          ...prev,
+          unit_description: selectedUnit.unit_description || "",
+          blockno: selectedUnit.blockno || "",
+          meter_id: selectedUnit.meter_id || ""
+        }));
+
+        // Now try to find matching customer data from userList
+        const matchingCustomer = userListCustomers.find(customer => {
+          // Match by property unit ID or by unit description and block number
+          return customer.propertyUnit?._id === formData.unit_id || 
+                 (customer.propertyUnit?.unit_description === selectedUnit.unit_description && 
+                  customer.propertyUnit?.blockno === selectedUnit.blockno);
+        });
+
+        if (matchingCustomer) {
+          // Auto-fill customer details from userList data
+          setFormData(prev => ({
+            ...prev,
+            customerName: matchingCustomer.name || prev.customerName,
+            phone: matchingCustomer.phone || prev.phone,
+            address: matchingCustomer.address || prev.address,
+            certifiName: matchingCustomer.certifiName || prev.certifiName,
+            certifiNo: matchingCustomer.certifiNo || prev.certifiNo
+          }));
+        }
+      }
+    }
+  }, [formData.unit_id, filteredUnits, userListCustomers]);
+
+  // Fetch properties and units
+  const fetchPropertiesAndUnits = async () => {
+    setPropertyLoading(true);
+    try {
+      // Fetch properties
+      const propertiesRes = await fetch("/api/property");
+      const propertiesData = await propertiesRes.json();
+
+      // Fetch units
+      const unitsRes = await fetch("/api/property_unit");
+      const unitsData = await unitsRes.json();
+
+      // Combine properties with their units
+      const propertiesWithUnits = propertiesData.map(property => ({
+        ...property,
+        units: unitsData.filter(unit => unit.property_id?._id === property._id)
+      }));
+
+      setProperties(propertiesWithUnits);
+    } catch (error) {
+      console.error("Error fetching properties and units:", error);
+      setFormMessage("❌ Error loading properties and units");
+      setFormMessageType("error");
+    } finally {
+      setPropertyLoading(false);
+    }
   };
 
   // Improved customer ID generation with collision detection and 4-digit limit
@@ -157,7 +220,7 @@ export default function CustomerPage() {
     if (!token || isEditing || !autoRefreshEnabled) return;
 
     try {
-      const res = await fetch(`${API_BASE_URL}/API/Customer/Read`, {
+      const res = await fetch("http://47.107.69.132:9400/API/Customer/Read", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -175,55 +238,26 @@ export default function CustomerPage() {
         }),
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData?.message || `HTTP error! status: ${res.status}`);
-      }
-
-      const data = await res.json();
-      const allCustomers = data?.result?.data || [];
-      
-      const existingIds = allCustomers.map(customer => customer.customerId).filter(id => id);
-      
-      let highestNumber = 0;
-      existingIds.forEach(id => {
-        const idMatch = id.match(/([A-Za-z]*)(\d+)/);
-        if (idMatch && idMatch.length >= 3) {
-          const numericPart = parseInt(idMatch[2], 10);
-          if (numericPart > highestNumber && numericPart < 10000) {
-            highestNumber = numericPart;
-          }
-        }
-      });
-
-      const newNumber = highestNumber + 1;
-      
-      if (newNumber > 9999) {
-        let availableNumber = 1;
-        for (let i = 1; i <= 9999; i++) {
-          const testId = `CUST${i.toString().padStart(4, "0")}`;
-          if (!existingIds.includes(testId)) {
-            availableNumber = i;
-            break;
-          }
-        }
-        const newId = `CUST${availableNumber.toString().padStart(4, "0")}`;
-        setFormData(prev => ({ ...prev, customerId: newId }));
-        setLastGeneratedId(newId);
-      } else {
-        const newId = `CUST${newNumber.toString().padStart(4, "0")}`;
+      if (res.ok) {
+        const data = await res.json();
+        const allCustomers = data?.result?.data || [];
         
-        if (existingIds.includes(newId)) {
-          let safeNumber = newNumber + 1;
-          while (safeNumber <= 9999) {
-            const safeId = `CUST${safeNumber.toString().padStart(4, "0")}`;
-            if (!existingIds.includes(safeId)) {
-              setFormData(prev => ({ ...prev, customerId: safeId }));
-              setLastGeneratedId(safeId);
-              return;
+        const existingIds = allCustomers.map(customer => customer.customerId).filter(id => id);
+        
+        let highestNumber = 0;
+        existingIds.forEach(id => {
+          const idMatch = id.match(/([A-Za-z]*)(\d+)/);
+          if (idMatch && idMatch.length >= 3) {
+            const numericPart = parseInt(idMatch[2], 10);
+            if (numericPart > highestNumber && numericPart < 10000) {
+              highestNumber = numericPart;
             }
-            safeNumber++;
           }
+        });
+
+        const newNumber = highestNumber + 1;
+        
+        if (newNumber > 9999) {
           let availableNumber = 1;
           for (let i = 1; i <= 9999; i++) {
             const testId = `CUST${i.toString().padStart(4, "0")}`;
@@ -232,13 +266,43 @@ export default function CustomerPage() {
               break;
             }
           }
-          const finalId = `CUST${availableNumber.toString().padStart(4, "0")}`;
-          setFormData(prev => ({ ...prev, customerId: finalId }));
-          setLastGeneratedId(finalId);
-        } else {
+          const newId = `CUST${availableNumber.toString().padStart(4, "0")}`;
           setFormData(prev => ({ ...prev, customerId: newId }));
           setLastGeneratedId(newId);
+        } else {
+          const newId = `CUST${newNumber.toString().padStart(4, "0")}`;
+          
+          if (existingIds.includes(newId)) {
+            let safeNumber = newNumber + 1;
+            while (safeNumber <= 9999) {
+              const safeId = `CUST${safeNumber.toString().padStart(4, "0")}`;
+              if (!existingIds.includes(safeId)) {
+                setFormData(prev => ({ ...prev, customerId: safeId }));
+                setLastGeneratedId(safeId);
+                return;
+              }
+              safeNumber++;
+            }
+            let availableNumber = 1;
+            for (let i = 1; i <= 9999; i++) {
+              const testId = `CUST${i.toString().padStart(4, "0")}`;
+              if (!existingIds.includes(testId)) {
+                availableNumber = i;
+                break;
+              }
+            }
+            const finalId = `CUST${availableNumber.toString().padStart(4, "0")}`;
+            setFormData(prev => ({ ...prev, customerId: finalId }));
+            setLastGeneratedId(finalId);
+          } else {
+            setFormData(prev => ({ ...prev, customerId: newId }));
+            setLastGeneratedId(newId);
+          }
         }
+      } else {
+        const fallbackId = "CUST0001";
+        setFormData(prev => ({ ...prev, customerId: fallbackId }));
+        setLastGeneratedId(fallbackId);
       }
     } catch (error) {
       console.error("Error generating customer ID:", error);
@@ -260,10 +324,15 @@ export default function CustomerPage() {
       certifiNo: "",
       remark: "",
       company: "Noretek Energy",
-      capturedBy: ""
+     
+      property_id: "",
+      unit_id: "",
+      property_name: "",
+      unit_description: "",
+      blockno: "",
+      meter_id: ""
     });
-    setSelectedProperty(null);
-    setPropertySearch("");
+    setFilteredUnits([]);
     setIsEditing(false);
     setFormMessage("");
     setFormMessageType("");
@@ -292,7 +361,7 @@ export default function CustomerPage() {
     setLoginLoading(true);
     setLoginError("");
     try {
-      const res = await fetch(`${API_BASE_URL}/API/User/Login`, {
+      const res = await fetch("http://47.107.69.132:9400/API/User/Login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(loginData),
@@ -308,11 +377,13 @@ export default function CustomerPage() {
         localStorage.setItem("token", data.result.token);
         setToken(data.result.token);
         setAutoRefreshEnabled(true);
+        // Fetch userList data after login
+        fetchUserListCustomers();
       } else {
         setLoginError(data?.message || "Login failed. Check credentials.");
       }
     } catch (err) {
-      setLoginError("❌ An error occurred: " + err.message);
+      setLoginError("An error occurred: " + err.message);
     } finally {
       setLoginLoading(false);
     }
@@ -329,22 +400,17 @@ export default function CustomerPage() {
     }
   };
 
-  // Handle property search input change
-  const handlePropertySearchChange = (e) => {
-    const value = e.target.value;
-    setPropertySearch(value);
-    searchProperties(value);
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormMessage("");
     setFormMessageType("");
     setLoading(true);
 
+    
+    
+
     try {
-      // Check for existing customer ID
-      const checkRes = await fetch(`${API_BASE_URL}/API/Customer/Read`, {
+      const checkRes = await fetch("http://47.107.69.132:9400/API/Customer/Read", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -362,20 +428,17 @@ export default function CustomerPage() {
         }),
       });
 
-      if (!checkRes.ok) {
-        const errorData = await checkRes.json();
-        throw new Error(errorData?.message || `HTTP error! status: ${checkRes.status}`);
-      }
-
-      const checkData = await checkRes.json();
-      const existingCustomer = checkData?.result?.data?.[0];
-      
-      if (existingCustomer && existingCustomer.customerId === formData.customerId && !isEditing) {
-        setFormMessage("⚠️ Customer ID was already taken. Generating new ID...");
-        setFormMessageType("warning");
-        await generateCustomerId();
-        setLoading(false);
-        return;
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        const existingCustomer = checkData?.result?.data?.[0];
+        
+        if (existingCustomer && existingCustomer.customerId === formData.customerId && !isEditing) {
+          setFormMessage("⚠️ Customer ID was already taken. Generating new ID...");
+          setFormMessageType("warning");
+          await generateCustomerId();
+          setLoading(false);
+          return;
+        }
       }
 
       const submitData = {
@@ -387,12 +450,19 @@ export default function CustomerPage() {
         certifiName: formData.certifiName || "",
         certifiNo: formData.certifiNo || "",
         company: formData.company,
-        capturedBy: formData.capturedBy
+       
+        // Include property information
+        property_id: formData.property_id,
+        unit_id: formData.unit_id,
+        property_name: formData.property_name,
+        unit_description: formData.unit_description,
+        blockno: formData.blockno,
+        meter_id: formData.meter_id
       };
 
       const endpoint = isEditing
-        ? `${API_BASE_URL}/API/Customer/Update`
-        : `${API_BASE_URL}/API/Customer/Create`;
+        ? "http://47.107.69.132:9400/API/Customer/Update"
+        : "http://47.107.69.132:9400/API/Customer/Create";
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -459,7 +529,7 @@ export default function CustomerPage() {
   const fetchCustomers = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/API/Customer/Read`, {
+      const res = await fetch("http://47.107.69.132:9400/API/Customer/Read", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -541,7 +611,13 @@ export default function CustomerPage() {
       certifiName: customer.certifiName ?? "",
       certifiNo: customer.certifiNo ?? "",
       company: customer.company ?? "Noretek Energy",
-      capturedBy: customer.capturedBy ?? ""
+      
+      property_id: customer.property_id ?? "",
+      unit_id: customer.unit_id ?? "",
+      property_name: customer.property_name ?? "",
+      unit_description: customer.unit_description ?? "",
+      blockno: customer.blockno ?? "",
+      meter_id: customer.meter_id ?? ""
     });
     setIsEditing(true);
     setAutoRefreshEnabled(false);
@@ -627,36 +703,17 @@ export default function CustomerPage() {
           height: 38px;
           white-space: nowrap;
         }
-        .property-search-container {
-          position: relative;
-        }
-        .property-results {
-          position: absolute;
-          top: 100%;
-          left: 0;
-          right: 0;
-          background: white;
-          border: 1px solid #ddd;
-          border-top: none;
-          max-height: 200px;
-          overflow-y: auto;
-          z-index: 1000;
-          box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        .property-result-item {
-          padding: 10px;
-          cursor: pointer;
-          border-bottom: 1px solid #eee;
-        }
-        .property-result-item:hover {
-          background-color: #f8f9fa;
-        }
-        .property-result-item:last-child {
-          border-bottom: none;
-        }
         .auto-fill-badge {
           background-color: #d4edda;
           color: #155724;
+          padding: 2px 6px;
+          border-radius: 3px;
+          font-size: 0.8em;
+          margin-left: 5px;
+        }
+        .userlist-fill-badge {
+          background-color: #d1ecf1;
+          color: #0c5460;
           padding: 2px 6px;
           border-radius: 3px;
           font-size: 0.8em;
@@ -733,12 +790,34 @@ export default function CustomerPage() {
           background-color: #f8d7da;
           color: #721c24;
         }
+        .property-details {
+          background-color: #f8f9fa;
+          border-radius: 5px;
+          padding: 15px;
+          margin-top: 10px;
+        }
+        .property-detail-item {
+          display: flex;
+          justify-content: between;
+          margin-bottom: 5px;
+        }
+        .property-detail-label {
+          font-weight: bold;
+          min-width: 120px;
+        }
+        .userlist-info {
+          background-color: #e3f2fd;
+          border-left: 4px solid #2196f3;
+          padding: 10px;
+          margin-top: 5px;
+          border-radius: 4px;
+        }
       `}</style>
 
       {/* LOGIN FORM */}
       {!token && (
-        <div className="card mb-5 shadow-sm">
-          <div className="card-header primaryColor text-center">
+        <div className="card mb-5 shadow">
+          <div className="card-header bg-dark text-white text-center">
             <h4>Login to Get Token</h4>
           </div>
           <div className="card-body">
@@ -747,7 +826,7 @@ export default function CustomerPage() {
                 <label className="form-label">User ID</label>
                 <input
                   type="text"
-                  className="form-control shadow-none"
+                  className="form-control"
                   name="userId"
                   value={loginData.userId}
                   onChange={handleLoginChange}
@@ -758,7 +837,7 @@ export default function CustomerPage() {
                 <label className="form-label">Password</label>
                 <input
                   type="password"
-                  className="form-control shadow-none"
+                  className="form-control"
                   name="password"
                   value={loginData.password}
                   onChange={handleLoginChange}
@@ -769,7 +848,7 @@ export default function CustomerPage() {
                 <label className="form-label">Company</label>
                 <input
                   type="text"
-                  className="form-control shadow-none"
+                  className="form-control"
                   name="company"
                   value={loginData.company}
                   onChange={handleLoginChange}
@@ -778,7 +857,7 @@ export default function CustomerPage() {
               </div>
               <button
                 type="submit"
-                className="btn primaryColor w-100"
+                className="btn btn-primary w-100"
                 disabled={loginLoading}
               >
                 {loginLoading ? "Logging in..." : "Login"}
@@ -794,8 +873,11 @@ export default function CustomerPage() {
       {/* CUSTOMER FORM */}
       {token && (
         <div className="card mb-5 shadow-sm">
-          <div className="card-header primaryColor text-center">
+          <div className="card-header primaryColor fw-bold text-center">
             <h4>{isEditing ? "Edit Customer" : "Create New Customer"}</h4>
+            <small className="text-white-50">
+              {userListCustomers.length > 0 ? `✅ Loaded ${userListCustomers.length} customers from registration data` : '⏳ Loading customer data...'}
+            </small>
           </div>
           <div className="card-body">
             {formMessage && (
@@ -805,49 +887,105 @@ export default function CustomerPage() {
             )}
             
             <form onSubmit={handleSubmit} className="row g-3">
-              {/* Property Search Field */}
+              {/* Property Information Section */}
               <div className="col-12">
-                <label className="form-label">Search Property Unit</label>
-                <div className="property-search-container">
-                  <input
-                    type="text"
-                    className="form-control shadow-none"
-                    value={propertySearch}
-                    onChange={handlePropertySearchChange}
-                    placeholder="Type to search property units (Unit Description - Block No) or customers..."
-                    disabled={isEditing}
-                  />
-                  {propertyLoading && (
-                    <div className="position-absolute top-50 end-0 translate-middle-y me-3">
-                      <div className="spinner-border spinner-border-sm" role="status"></div>
-                    </div>
-                  )}
-                  {propertyResults.length > 0 && (
-                    <div className="property-results">
-                      {propertyResults.map((property, index) => (
-                        <div
-                          key={index}
-                          className="property-result-item"
-                          onClick={() => handlePropertySelect(property)}
-                        >
-                          <div className="fw-bold">
-                            {property.propertyUnit 
-                              ? `${property.propertyUnit.unit_description} - ${property.propertyUnit.blockno}`
-                              : "No unit assigned"
-                            }
-                          </div>
-                          <div className="property-unit-info">
-                            Customer: {property.name} | Phone: {property.phone} | 
-                            Property: {property.propertyName?.property_name || "N/A"}
-                          </div>
-                        </div>
+                <h6 className="titleColor mb-3">
+                  <i className="bi bi-building me-2"></i>
+                  Property Information
+                </h6>
+                
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Property Name *</label>
+                    <select
+                      className="form-control shadow-none"
+                      name="property_id"
+                      value={formData.property_id}
+                      onChange={handleChange}
+                      required
+                      disabled={propertyLoading}
+                    >
+                      <option value="">Select Property</option>
+                      {properties.map((property) => (
+                        <option key={property._id} value={property._id}>
+                          {property.property_name}
+                        </option>
                       ))}
-                    </div>
-                  )}
+                    </select>
+                    {propertyLoading && (
+                      <small className="text-muted">Loading properties...</small>
+                    )}
+                  </div>
+
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Property Unit *</label>
+                    <select
+                      className="form-control shadow-none"
+                      name="unit_id"
+                      value={formData.unit_id}
+                      onChange={handleChange}
+                      required
+                      disabled={!formData.property_id || propertyLoading}
+                    >
+                      <option value="">
+                        {formData.property_id ? "Select Unit" : "First select a property"}
+                      </option>
+                      {filteredUnits.map((unit) => (
+                        <option key={unit._id} value={unit._id}>
+                          {unit.unit_description} - Block {unit.blockno}
+                          {unit.meter_id && ` (Meter: ${unit.meter_id})`}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="text-muted">
+                      Selecting a unit will auto-fill customer data from registration records
+                    </small>
+                  </div>
                 </div>
-                <small className="form-text text-muted">
-                  Search for property units
-                </small>
+
+                {/* Display Selected Property Details */}
+                {(formData.property_name || formData.unit_description) && (
+                  <div className="property-details">
+                    <h6 className="titleColor mb-2">
+                      <i className="bi bi-info-circle me-2"></i>
+                      Selected Property Details:
+                    </h6>
+                    <div className="row">
+                      <div className="col-md-3">
+                        <div className="property-detail-item">
+                          <span className="property-detail-label">Property:</span>
+                          <span>{formData.property_name || "Not selected"}</span>
+                        </div>
+                      </div>
+                      <div className="col-md-3">
+                        <div className="property-detail-item">
+                          <span className="property-detail-label">Unit:</span>
+                          <span>{formData.unit_description || "Not selected"}</span>
+                        </div>
+                      </div>
+                      <div className="col-md-3">
+                        <div className="property-detail-item">
+                          <span className="property-detail-label">Block:</span>
+                          <span>{formData.blockno || "Not selected"}</span>
+                        </div>
+                      </div>
+                      <div className="col-md-3">
+                        <div className="property-detail-item">
+                          <span className="property-detail-label">Meter:</span>
+                          <span>{formData.meter_id || "Not assigned"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Customer Information Section */}
+              <div className="col-12">
+                <h6 className="titleColor mb-3">
+                  <i className="bi bi-person me-2"></i>
+                  Customer Information
+                </h6>
               </div>
 
               <div className="col-md-6">
@@ -913,7 +1051,7 @@ export default function CustomerPage() {
                   required
                   placeholder="Enter customer name"
                 />
-                {selectedProperty && <span className="auto-fill-badge">Auto-filled</span>}
+                {formData.unit_id && <span className="userlist-fill-badge">Auto-filled from registration</span>}
               </div>
 
               <div className="col-md-6">
@@ -943,7 +1081,7 @@ export default function CustomerPage() {
                   onChange={handleChange}
                   placeholder="Enter phone number"
                 />
-                {selectedProperty && <span className="auto-fill-badge">Auto-filled</span>}
+                {formData.unit_id && <span className="userlist-fill-badge">Auto-filled from registration</span>}
               </div>
 
               <div className="col-md-6">
@@ -956,7 +1094,7 @@ export default function CustomerPage() {
                   onChange={handleChange}
                   placeholder="Enter address"
                 />
-                {selectedProperty && <span className="auto-fill-badge">Auto-filled</span>}
+                {formData.unit_id && <span className="userlist-fill-badge">Auto-filled from registration</span>}
               </div>
 
               <div className="col-md-6">
@@ -969,7 +1107,7 @@ export default function CustomerPage() {
                   onChange={handleChange}
                   placeholder="Enter certificate name"
                 />
-                {selectedProperty && <span className="auto-fill-badge">Auto-filled</span>}
+                {formData.unit_id && <span className="userlist-fill-badge">Auto-filled from registration</span>}
               </div>
 
               <div className="col-md-6">
@@ -982,20 +1120,10 @@ export default function CustomerPage() {
                   onChange={handleChange}
                   placeholder="Enter certificate number"
                 />
-                {selectedProperty && <span className="auto-fill-badge">Auto-filled</span>}
+                {formData.unit_id && <span className="userlist-fill-badge">Auto-filled from registration</span>}
               </div>
 
-              <div className="col-md-6">
-                <label className="form-label">Captured By</label>
-                <input
-                  type="text"
-                  className="form-control shadow-none"
-                  name="capturedBy"
-                  value={formData.capturedBy}
-                  onChange={handleChange}
-                  placeholder="Enter captured by name"
-                />
-              </div>
+             
 
               <div className="col-md-6">
                 <label className="form-label">Company</label>
@@ -1021,8 +1149,8 @@ export default function CustomerPage() {
               </div>
 
               <div className="col-12">
-                <button type="submit" className="btn primaryColor w-100" disabled={loading}>
-                  {loading ? "Processing..." : (isEditing ? "Update Customer" : "Create Customer")}
+                <button type="submit" className="btn primaryColor fw-bold w-100" disabled={loading}>
+                  {loading ? (isEditing ? "Updating..." : "Creating...") : (isEditing ? "Update Customer" : "Create Customer")}
                 </button>
                 {isEditing && (
                   <button
@@ -1040,7 +1168,7 @@ export default function CustomerPage() {
         </div>
       )}
 
-      {/* CUSTOMER TABLE - Updated to include Captured By column */}
+      {/* CUSTOMER TABLE - Updated to include Property Information */}
       {token && (
         <div className="card shadow mb-5">
           <div className="card-header primaryColor text-white">
@@ -1111,9 +1239,14 @@ export default function CustomerPage() {
                         </th>
                         <th className="titleColor">Phone</th>
                         <th className="titleColor">Address</th>
+                        <th className="titleColor">Property</th>
+                        <th className="titleColor">Unit</th>
+                        <th className="titleColor">Block</th>
+                        <th className="titleColor">Meter</th>
                         <th className="titleColor">Certificate Name</th>
                         <th className="titleColor">Certificate Number</th>
                         <th className="titleColor">Company</th>
+                        
                         <th className="titleColor">Remark</th>
                         <th className="titleColor">Actions</th>
                       </tr>
@@ -1127,9 +1260,14 @@ export default function CustomerPage() {
                             <td>{getLabelFromValue(customer.type, customerTypes)}</td>
                             <td>{customer.phone || "-"}</td>
                             <td>{customer.address || "-"}</td>
+                            <td>{customer.property_name || "-"}</td>
+                            <td>{customer.unit_description || "-"}</td>
+                            <td>{customer.blockno || "-"}</td>
+                            <td>{customer.meter_id || "-"}</td>
                             <td>{customer.certifiName || "-"}</td>
                             <td>{customer.certifiNo || "-"}</td>
                             <td>{customer.company}</td>
+                           
                             <td>{customer.remark || "-"}</td>
                             <td>
                               <button
@@ -1144,7 +1282,7 @@ export default function CustomerPage() {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan="11" className="text-center text-muted display-5 py-4">
+                          <td colSpan="15" className="text-center text-muted display-5 py-4">
                             No customers found
                           </td>
                         </tr>

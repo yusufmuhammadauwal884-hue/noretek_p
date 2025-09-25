@@ -12,10 +12,12 @@ export default function PropertyForm() {
     property_location: "",
     property_address: "",
     captured_by: "",
-    date_captured: new Date().toISOString().split("T")[0], // ✅ default today
+    date_captured: new Date().toISOString().split("T")[0],
   });
   const [editId, setEditId] = useState(null);
   const [showTable, setShowTable] = useState(true);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   // ✅ Set captured_by from logged-in user
   useEffect(() => {
@@ -34,16 +36,29 @@ export default function PropertyForm() {
     fetchProperties();
   }, []);
 
+  const showSuccess = (message) => {
+    setSuccessMessage(message);
+    setTimeout(() => setSuccessMessage(""), 3000);
+  };
+
+  const showError = (message) => {
+    setErrorMessage(message);
+    setTimeout(() => setErrorMessage(""), 3000);
+  };
+
   const fetchProperties = async () => {
-    const res = await fetch("/api/property");
-    const data = await res.json();
+    try {
+      const res = await fetch("/api/property");
+      const data = await res.json();
 
-    // Sort by _id ascending
-    const sortedData = [...data].sort((a, b) =>
-      a._id.localeCompare(b._id)
-    );
-
-    setProperties(sortedData);
+      // Sort by _id ascending
+      const sortedData = [...data].sort((a, b) =>
+        a._id.localeCompare(b._id)
+      );
+      setProperties(sortedData);
+    } catch (error) {
+      showError("Failed to fetch properties");
+    }
   };
 
   const handleChange = (e) =>
@@ -52,32 +67,39 @@ export default function PropertyForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (editId) {
-      // Update
-      await fetch("/api/property", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editId, ...form }),
+    try {
+      if (editId) {
+        // Update
+        await fetch("/api/property", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editId, ...form }),
+        });
+        showSuccess("✅ Property updated successfully!");
+      } else {
+        // Create
+        await fetch("/api/property", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
+        showSuccess("✅ Property added successfully!");
+      }
+      
+      setForm({
+        owner_name: "",
+        owner_gsm: "",
+        property_name: "",
+        property_location: "",
+        property_address: "",
+        captured_by: form.captured_by,
+        date_captured: new Date().toISOString().split("T")[0],
       });
-    } else {
-      // Create
-      await fetch("/api/property", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+      setEditId(null);
+      fetchProperties();
+    } catch (error) {
+      showError("❌ Error saving property");
     }
-    setForm({
-      owner_name: "",
-      owner_gsm: "",
-      property_name: "",
-      property_location: "",
-      property_address: "",
-      captured_by: form.captured_by, // ✅ persist logged-in user
-      date_captured: new Date().toISOString().split("T")[0], // ✅ reset to today
-    });
-    setEditId(null);
-    fetchProperties();
   };
 
   const handleEdit = (p) => {
@@ -91,37 +113,71 @@ export default function PropertyForm() {
       date_captured: p.date_captured.split("T")[0],
     });
     setEditId(p._id);
+    showSuccess("📝 Editing property - Update the details below");
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this property?"))
       return;
-    await fetch("/api/property", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    fetchProperties();
+    
+    try {
+      await fetch("/api/property", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      showSuccess("🗑️ Property deleted successfully!");
+      fetchProperties();
+    } catch (error) {
+      showError("❌ Error deleting property");
+    }
   };
 
   return (
     <div className="container mt-5">
       <h3 className="mb-4 text-center titleColor">Property Management</h3>
 
+      {/* Success Message */}
+      {successMessage && (
+        <div className="alert alert-success alert-dismissible fade show">
+          <i className="bi bi-check-circle-fill me-2"></i>
+          {successMessage}
+          <button 
+            type="button" 
+            className="btn-close" 
+            onClick={() => setSuccessMessage("")}
+          ></button>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {errorMessage && (
+        <div className="alert alert-danger alert-dismissible fade show">
+          <i className="bi bi-exclamation-triangle-fill me-2"></i>
+          {errorMessage}
+          <button 
+            type="button" 
+            className="btn-close" 
+            onClick={() => setErrorMessage("")}
+          ></button>
+        </div>
+      )}
+
       {/* Add / Update Property Form */}
       <div className="card mb-4 shadow-sm">
         <div className="card-header fw-bold backgro">
+          <i className="bi bi-building me-2"></i>
           {editId ? "Update Property" : "Add New Property"}
         </div>
         <div className="card-body">
           <form onSubmit={handleSubmit}>
             <div className="row">
               {[
-                { label: "Owner Name", name: "owner_name" },
-                { label: "Owner GSM", name: "owner_gsm" },
-                { label: "Property Name", name: "property_name" },
-                { label: "Location", name: "property_location" },
-                { label: "Address", name: "property_address" },
+                { label: "Owner Name", name: "owner_name", icon: "bi-person" },
+                { label: "Owner GSM", name: "owner_gsm", icon: "bi-phone" },
+                { label: "Property Name", name: "property_name", icon: "bi-house" },
+                { label: "Location", name: "property_location", icon: "bi-geo-alt" },
+                { label: "Address", name: "property_address", icon: "bi-geo" },
               ].map((field, idx) => (
                 <div
                   className={`col-md-${
@@ -129,7 +185,10 @@ export default function PropertyForm() {
                   } mb-3`}
                   key={idx}
                 >
-                  <label className="form-label">{field.label}</label>
+                  <label className="form-label">
+                    <i className={`${field.icon} me-1`}></i>
+                    {field.label}
+                  </label>
                   <input
                     type="text"
                     className="form-control shadow-none"
@@ -143,7 +202,10 @@ export default function PropertyForm() {
 
               {/* Captured By (Disabled) */}
               <div className="col-md-6 mb-3">
-                <label className="form-label">Captured By</label>
+                <label className="form-label">
+                  <i className="bi bi-person-check me-1"></i>
+                  Captured By
+                </label>
                 <input
                   type="text"
                   className="form-control shadow-none"
@@ -155,7 +217,10 @@ export default function PropertyForm() {
 
               {/* Date Captured (Default = Today) */}
               <div className="col-md-6 mb-3">
-                <label className="form-label">Date Captured</label>
+                <label className="form-label">
+                  <i className="bi bi-calendar me-1"></i>
+                  Date Captured
+                </label>
                 <input
                   type="date"
                   className="form-control shadow-none"
@@ -167,8 +232,32 @@ export default function PropertyForm() {
               </div>
             </div>
             <button type="submit" className="btn backgro w-100">
+              <i className={`bi ${editId ? 'bi-arrow-clockwise' : 'bi-plus-circle'} me-2`}></i>
               {editId ? "Update Property" : "Add Property"}
             </button>
+            
+            {editId && (
+              <button 
+                type="button" 
+                className="btn btn-secondary w-100 mt-2"
+                onClick={() => {
+                  setEditId(null);
+                  setForm({
+                    owner_name: "",
+                    owner_gsm: "",
+                    property_name: "",
+                    property_location: "",
+                    property_address: "",
+                    captured_by: form.captured_by,
+                    date_captured: new Date().toISOString().split("T")[0],
+                  });
+                  showSuccess("➕ Add new property mode");
+                }}
+              >
+                <i className="bi bi-x-circle me-2"></i>
+                Cancel Edit
+              </button>
+            )}
           </form>
         </div>
       </div>
@@ -176,10 +265,22 @@ export default function PropertyForm() {
       {/* Table */}
       {showTable && (
         <div className="card shadow-sm border-0">
+          <div className="card-header backgro d-flex justify-content-between align-items-center">
+            <span className="fw-bold">
+              <i className="bi bi-list-ul me-2"></i>
+              Properties List ({properties.length})
+            </span>
+            <button 
+              className="btn btn-sm btn-light"
+              onClick={fetchProperties}
+            >
+              <i className="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+          </div>
           <div className="card-body p-0">
-            <div className="table-responsive ">
-              <table className="table table-striped mb-0 ">
-                <thead className=" table-hover table-primary border-0">
+            <div className="table-responsive">
+              <table className="table table-striped mb-0">
+                <thead className="table-hover table-primary">
                   <tr>
                     <th>#</th>
                     <th>Owner</th>
@@ -199,7 +300,7 @@ export default function PropertyForm() {
                         <td>{index + 1}</td>
                         <td>{p.owner_name}</td>
                         <td>{p.owner_gsm}</td>
-                        <td>{p.property_name}</td>
+                        <td className="fw-bold">{p.property_name}</td>
                         <td>{p.property_location}</td>
                         <td>{p.property_address}</td>
                         <td>{p.captured_by}</td>
@@ -210,22 +311,25 @@ export default function PropertyForm() {
                           <button
                             className="btn btn-warning btn-sm me-2"
                             onClick={() => handleEdit(p)}
+                            title="Edit Property"
                           >
-                            Edit
+                            <i className="bi bi-pencil"></i>
                           </button>
                           <button
                             className="btn btn-danger btn-sm"
                             onClick={() => handleDelete(p._id)}
+                            title="Delete Property"
                           >
-                            Delete
+                            <i className="bi bi-trash"></i>
                           </button>
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="9" className="text-center">
-                        No property found
+                      <td colSpan="9" className="text-center py-4">
+                        <i className="bi bi-inbox display-4 text-muted d-block mb-2"></i>
+                        No properties found. Add your first property above.
                       </td>
                     </tr>
                   )}
@@ -235,6 +339,16 @@ export default function PropertyForm() {
           </div>
         </div>
       )}
+
+      <style jsx>{`
+        .backgro {
+          background-color: #0d6efd;
+          color: white;
+        }
+        .titleColor {
+          color: #0d6efd;
+        }
+      `}</style>
     </div>
   );
 }

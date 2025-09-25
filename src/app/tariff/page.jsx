@@ -3,9 +3,6 @@
 import React, { useState, useEffect } from "react";
 
 export default function TariffPage() {
-  // Define API_BASE_URL using environment variable
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://47.107.69.132:9400';
-
   // Login state
   const [loginData, setLoginData] = useState({
     userId: "",
@@ -54,19 +51,16 @@ export default function TariffPage() {
   useEffect(() => {
     if (token) {
       fetchTariffs();
-      if (!isEditing) {
-        generateTariffId();
-      }
+      generateTariffId();
     }
   }, [token, pagination.pageNumber, pagination.pageSize, searchTerm, sortField, sortOrder]);
 
-  // Improved tariff ID generation with collision detection
+  // Generate tariff ID
   const generateTariffId = async () => {
     if (!token || isEditing) return;
     
     try {
-      // Fetch all tariffs to check existing IDs
-      const res = await fetch(`${API_BASE_URL}/API/Tariff/Read`, {
+      const res = await fetch("http://47.107.69.132:9400/API/Tariff/Read", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -76,51 +70,36 @@ export default function TariffPage() {
           createDateRange: [],
           updateDateRange: [],
           pageNumber: 1,
-          pageSize: 1000, // Get all tariffs to check IDs
+          pageSize: 1,
           company: "Noretek Energy",
           searchTerm: "",
-          sortField: "tariffId",
+          sortField: "createDate",
           sortOrder: "desc",
         }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        const allTariffs = data?.result?.data || [];
+        const latestTariff = data?.result?.data?.[0];
         
-        // Extract all existing tariff IDs
-        const existingIds = allTariffs.map(tariff => tariff.tariffId).filter(Boolean);
-        
-        // Find the highest numeric part
-        let maxNumber = 0;
-        existingIds.forEach(id => {
-          const match = id.match(/(?:TARIFF|TAR|TF)(\d+)/i);
-          if (match && match[1]) {
-            const num = parseInt(match[1], 10);
-            if (num > maxNumber) maxNumber = num;
+        if (latestTariff && latestTariff.tariffId) {
+          // Extract the numeric part and increment
+          const idParts = latestTariff.tariffId.match(/([A-Za-z]*)(\d+)/);
+          if (idParts && idParts.length >= 3) {
+            const prefix = idParts[1] || "TARIFF";
+            const numericPart = parseInt(idParts[2], 10) + 1;
+            const newId = `${prefix}${numericPart.toString().padStart(4, '0')}`;
+            setFormData(prev => ({ ...prev, tariffId: newId }));
+            return;
           }
-        });
-
-        // Generate new ID with prefix "TARIFF" and increment
-        const newNumber = maxNumber + 1;
-        const newId = `TARIFF${newNumber.toString().padStart(4, '0')}`;
-        
-        // Check if the generated ID already exists (safety check)
-        if (!existingIds.includes(newId)) {
-          setFormData(prev => ({ ...prev, tariffId: newId }));
-        } else {
-          // If by chance it exists, try next number
-          setFormData(prev => ({ ...prev, tariffId: `TARIFF${(newNumber + 1).toString().padStart(4, '0')}` }));
         }
-      } else {
-        // Fallback to default pattern if fetch fails
-        setFormData(prev => ({ ...prev, tariffId: "TARIFF0001" }));
       }
+      
+      // Fallback to default pattern if anything fails
+      setFormData(prev => ({ ...prev, tariffId: "TARIFF0001" }));
     } catch (error) {
       console.error("Error generating tariff ID:", error);
-      // Fallback with timestamp-based ID to avoid collisions
-      const timestamp = Date.now().toString().slice(-4);
-      setFormData(prev => ({ ...prev, tariffId: `TARIFF${timestamp}` }));
+      setFormData(prev => ({ ...prev, tariffId: "TARIFF0001" }));
     }
   };
 
@@ -134,7 +113,7 @@ export default function TariffPage() {
     setLoginLoading(true);
     setLoginError("");
     try {
-      const res = await fetch(`${API_BASE_URL}/API/User/Login`, {
+      const res = await fetch("http://47.107.69.132:9400/API/User/Login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(loginData),
@@ -177,44 +156,26 @@ export default function TariffPage() {
     setLoading(true);
     
     try {
-      // First, verify the tariff ID doesn't already exist (for create operations)
-      if (!isEditing) {
-        const checkRes = await fetch(`${API_BASE_URL}/API/Tariff/Read`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            pageNumber: 1,
-            pageSize: 1,
-            company: "Noretek Energy",
-            searchTerm: formData.tariffId,
-          }),
-        });
-
-        if (checkRes.ok) {
-          const checkData = await checkRes.json();
-          if (checkData?.result?.data?.length > 0) {
-            // ID already exists, generate a new one
-            await generateTariffId();
-            throw new Error("Tariff ID already exists. A new ID has been generated. Please try again.");
-          }
-        }
-      }
-
       const endpoint = isEditing 
-        ? `${API_BASE_URL}/API/Tariff/Update` 
-        : `${API_BASE_URL}/API/Tariff/Create`;
+        ? "http://47.107.69.132:9400/API/Tariff/Update" 
+        : "http://47.107.69.132:9400/API/Tariff/Create";
       
       // Format the data according to API requirements
-      const requestData = {
-        ...formData,
-        price: formData.price ? Number(formData.price) : 0,
-        tax: formData.tax ? Number(formData.tax) : 0,
-        repaymentRatio: formData.repaymentRatio ? Number(formData.repaymentRatio) : 0,
-        monthlyCost: formData.monthlyCost ? Number(formData.monthlyCost) : 0
-      };
+      const requestData = isEditing 
+        ? { 
+            ...formData,
+            price: formData.price ? Number(formData.price) : 0,
+            tax: formData.tax ? Number(formData.tax) : 0,
+            repaymentRatio: formData.repaymentRatio ? Number(formData.repaymentRatio) : 0,
+            monthlyCost: formData.monthlyCost ? Number(formData.monthlyCost) : 0
+          }
+        : { 
+            ...formData,
+            price: formData.price ? Number(formData.price) : 0,
+            tax: formData.tax ? Number(formData.tax) : 0,
+            repaymentRatio: formData.repaymentRatio ? Number(formData.repaymentRatio) : 0,
+            monthlyCost: formData.monthlyCost ? Number(formData.monthlyCost) : 0
+          };
       
       const res = await fetch(endpoint, {
         method: "POST",
@@ -267,21 +228,11 @@ export default function TariffPage() {
     }
   };
 
-  // Manual ID regeneration function
-  const regenerateTariffId = async () => {
-    if (!isEditing) {
-      await generateTariffId();
-      setFormMessage("🔄 Tariff ID regenerated");
-      setFormMessageType("info");
-      setTimeout(() => setFormMessage(""), 3000);
-    }
-  };
-
   // Table functions
   const fetchTariffs = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/API/Tariff/Read`, {
+      const res = await fetch("http://47.107.69.132:9400/API/Tariff/Read", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -428,11 +379,6 @@ export default function TariffPage() {
         .table {
           min-width: 1000px;
         }
-        .id-regenerate-btn {
-          margin-top: 0.5rem;
-          font-size: 0.8rem;
-          padding: 0.2rem 0.5rem;
-        }
       `}</style>
 
       {/* LOGIN FORM */}
@@ -509,21 +455,11 @@ export default function TariffPage() {
                   onChange={handleChange}
                   required
                   placeholder="Auto-generated tariff ID"
-                  readOnly={!isEditing}
+                  readOnly={true}
                 />
                 <small className="form-text text-muted">
-                  {isEditing ? "Editing existing tariff ID" : "Tariff ID is auto-generated"}
+                  Tariff ID is auto-generated
                 </small>
-                {!isEditing && (
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary btn-sm id-regenerate-btn"
-                    onClick={regenerateTariffId}
-                    disabled={loading}
-                  >
-                    🔄 Regenerate ID
-                  </button>
-                )}
               </div>
 
               <div className="col-md-6">
@@ -638,7 +574,7 @@ export default function TariffPage() {
                 )}
               </div>
               {formMessage && (
-                <div className={`alert mt-3 alert-${formMessageType === "success" ? "success" : formMessageType === "info" ? "info" : "danger"}`}>
+                <div className={`alert mt-3 alert-${formMessageType === "success" ? "success" : "danger"}`}>
                   {formMessage}
                 </div>
               )}
@@ -728,12 +664,12 @@ export default function TariffPage() {
                       {tariffs.length > 0 ? (
                         tariffs.map((tariff, index) => (
                           <tr key={index}>
-                            <td><strong>{tariff.tariffId}</strong></td>
+                            <td>{tariff.tariffId}</td>
                             <td>{tariff.tariffName}</td>
-                            <td>₦{tariff.price?.toLocaleString()}</td>
-                            <td>₦{tariff.tax?.toLocaleString()}</td>
-                            <td>{tariff.repaymentRatio}%</td>
-                            <td>₦{tariff.monthlyCost?.toLocaleString()}</td>
+                            <td>{tariff.price}</td>
+                            <td>{tariff.tax}</td>
+                            <td>{tariff.repaymentRatio}</td>
+                            <td>{tariff.monthlyCost}</td>
                             <td>{tariff.company}</td>
                             <td>{tariff.remark || "-"}</td>
                             <td>
@@ -749,7 +685,7 @@ export default function TariffPage() {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan="9" className="text-center text-muted py-4">
+                          <td colSpan="9" className="text-center text-muted display-5 py-4">
                             No tariffs found
                           </td>
                         </tr>

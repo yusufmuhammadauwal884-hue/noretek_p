@@ -6,9 +6,6 @@ import { useRouter } from "next/navigation";
 export default function CalinAdminLoginPage() {
   const router = useRouter();
 
-  // Define API_BASE_URL using environment variable
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://47.107.69.132:9400';
-
   const [loginData, setLoginData] = useState({
     userId: "",
     password: "",
@@ -35,19 +32,12 @@ export default function CalinAdminLoginPage() {
     setLoginError("");
     setFormMessage("");
     setFormMessageType("");
-    
     try {
-      const res = await fetch(`${API_BASE_URL}/API/User/Login`, {
+      const res = await fetch("http://47.107.69.132:9400/API/User/Login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(loginData),
       });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData?.message || `HTTP error! status: ${res.status}`);
-      }
-
       const data = await res.json();
 
       if (data?.result?.token) {
@@ -58,11 +48,10 @@ export default function CalinAdminLoginPage() {
           router.push("/customer");
         }, 1200);
       } else {
-        throw new Error(data?.message || "Login failed. Check credentials.");
+        setLoginError(data?.message || "Login failed. Check credentials.");
       }
     } catch (err) {
-      setLoginError("❌ An error occurred: " + err.message);
-      setFormMessageType("error");
+      setLoginError("An error occurred: " + err.message);
     } finally {
       setLoginLoading(false);
     }
@@ -70,35 +59,10 @@ export default function CalinAdminLoginPage() {
 
   return (
     <div className="container min-vh-100 d-flex align-items-center justify-content-center" style={{ background: "#f8f9fa" }}>
-      <style jsx>{`
-        .primaryColor {
-          background-color: #0d6efd;
-          color: white;
-        }
-        .form-control:focus {
-          box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.25);
-          border-color: #80bdff;
-        }
-        .btn {
-          border-radius: 5px;
-          font-weight: 500;
-          transition: all 0.2s;
-        }
-        .btn:disabled {
-          opacity: 0.65;
-        }
-        .card {
-          border: none;
-          border-radius: 10px;
-          overflow: hidden;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-      `}</style>
-
       <div className="row justify-content-center w-100">
         <div className="col-md-8 col-lg-6">
           <div className="card shadow-lg mt-5">
-            <div className="card-header primaryColor text-center py-3">
+            <div className="card-header bg-primary text-white text-center py-3">
               <h3 className="mb-0">
                 <i className="bi bi-shield-lock me-2"></i>
                 Calin Admin Portal
@@ -125,7 +89,7 @@ export default function CalinAdminLoginPage() {
                     </span>
                     <input
                       type="text"
-                      className="form-control shadow-none"
+                      className="form-control"
                       name="userId"
                       value={loginData.userId}
                       onChange={handleLoginChange}
@@ -143,7 +107,7 @@ export default function CalinAdminLoginPage() {
                     </span>
                     <input
                       type="password"
-                      className="form-control shadow-none"
+                      className="form-control"
                       name="password"
                       value={loginData.password}
                       onChange={handleLoginChange}
@@ -161,7 +125,7 @@ export default function CalinAdminLoginPage() {
                     </span>
                     <input
                       type="text"
-                      className="form-control shadow-none"
+                      className="form-control"
                       name="company"
                       value={loginData.company}
                       onChange={handleLoginChange}
@@ -174,7 +138,7 @@ export default function CalinAdminLoginPage() {
                 <div className="d-grid gap-2 mb-3">
                   <button
                     type="submit"
-                    className="btn primaryColor btn-lg"
+                    className="btn btn-primary btn-lg"
                     disabled={loginLoading}
                   >
                     {loginLoading ? (
@@ -219,6 +183,8 @@ export default function CalinAdminLoginPage() {
                   </div>
                 )}
               </form>
+
+              
             </div>
             <div className="card-footer text-center py-3 bg-light">
               <small className="text-muted">

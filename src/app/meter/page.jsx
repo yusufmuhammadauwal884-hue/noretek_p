@@ -3,9 +3,6 @@
 import React, { useState, useEffect } from "react";
 
 export default function MeterPage() {
-  // Define API_BASE_URL using environment variable
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://47.107.69.132:9400';
-
   // Login state
   const [loginData, setLoginData] = useState({
     userId: "",
@@ -50,6 +47,7 @@ export default function MeterPage() {
     { value: 0, label: "Gas" },
     { value: 2, label: "Electricity" },
     { value: 1, label: "Water" }
+    
   ];
 
   const communicationWays = [
@@ -73,9 +71,8 @@ export default function MeterPage() {
 
   // Fetch meters when token or filters change
   useEffect(() => {
-    if (token) {
-      fetchMeters();
-    }
+    if (token) fetchMeters();
+    // eslint-disable-next-line
   }, [token, pagination.pageNumber, pagination.pageSize, searchTerm, sortField, sortOrder]);
 
   // Login handlers
@@ -88,7 +85,7 @@ export default function MeterPage() {
     setLoginLoading(true);
     setLoginError("");
     try {
-      const res = await fetch(`${API_BASE_URL}/API/User/Login`, {
+      const res = await fetch("http://47.107.69.132:9400/API/User/Login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(loginData),
@@ -132,30 +129,6 @@ export default function MeterPage() {
     setLoading(true);
 
     try {
-      // First, verify the meter ID doesn't already exist (for create operations)
-      if (!isEditing) {
-        const checkRes = await fetch(`${API_BASE_URL}/API/Meter/Read`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            pageNumber: 1,
-            pageSize: 1,
-            company: "Noretek Energy",
-            searchTerm: formData.meterId,
-          }),
-        });
-
-        if (checkRes.ok) {
-          const checkData = await checkRes.json();
-          if (checkData?.result?.data?.length > 0) {
-            throw new Error("Meter ID already exists. Please use a different ID.");
-          }
-        }
-      }
-
       const submitData = {
         meterId: formData.meterId,
         type: Number(formData.type),
@@ -169,8 +142,8 @@ export default function MeterPage() {
       };
 
       const endpoint = isEditing
-        ? `${API_BASE_URL}/API/Meter/Update`
-        : `${API_BASE_URL}/API/Meter/Create`;
+        ? "http://47.107.69.132:9400/API/Meter/Update"
+        : "http://47.107.69.132:9400/API/Meter/Create";
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -223,11 +196,9 @@ export default function MeterPage() {
 
   // Table functions
   const fetchMeters = async () => {
-    if (!token) return;
-    
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/API/Meter/Read`, {
+      const res = await fetch("http://47.107.69.132:9400/API/Meter/Read", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -368,26 +339,12 @@ export default function MeterPage() {
         .input-group {
           width: auto;
         }
-        .primaryColor {
-          background-color: #0d6efd;
-          color: white;
-        }
-        .titleColor {
-          color: #0d6efd;
-        }
-        .table-container {
-          overflow-x: auto;
-          width: 100%;
-        }
-        .table {
-          min-width: 1000px;
-        }
       `}</style>
 
       {/* LOGIN FORM */}
       {!token && (
-        <div className="card mb-5 shadow-sm">
-          <div className="card-header primaryColor text-center">
+        <div className="card mb-5 shadow">
+          <div className="card-header bg-dark text-white text-center">
             <h4>Login to Get Token</h4>
           </div>
           <div className="card-body">
@@ -396,7 +353,7 @@ export default function MeterPage() {
                 <label className="form-label">User ID</label>
                 <input
                   type="text"
-                  className="form-control shadow-none"
+                  className="form-control"
                   name="userId"
                   value={loginData.userId}
                   onChange={handleLoginChange}
@@ -407,7 +364,7 @@ export default function MeterPage() {
                 <label className="form-label">Password</label>
                 <input
                   type="password"
-                  className="form-control shadow-none"
+                  className="form-control"
                   name="password"
                   value={loginData.password}
                   onChange={handleLoginChange}
@@ -418,7 +375,7 @@ export default function MeterPage() {
                 <label className="form-label">Company</label>
                 <input
                   type="text"
-                  className="form-control shadow-none"
+                  className="form-control"
                   name="company"
                   value={loginData.company}
                   onChange={handleLoginChange}
@@ -427,7 +384,7 @@ export default function MeterPage() {
               </div>
               <button
                 type="submit"
-                className="btn primaryColor w-100"
+                className="btn btn-primary w-100"
                 disabled={loginLoading}
               >
                 {loginLoading ? "Logging in..." : "Login"}
@@ -443,10 +400,16 @@ export default function MeterPage() {
       {/* METER FORM */}
       {token && (
         <div className="card mb-5 shadow-sm">
-          <div className="card-header primaryColor text-center">
+          <div className="card-header primaryColor fw-bold text-center">
             <h4>{isEditing ? "Edit Meter" : "Create New Meter"}</h4>
           </div>
           <div className="card-body">
+            {formMessage && (
+              <div className={`alert alert-${formMessageType === "success" ? "success" : "danger"} mb-4`}>
+                {formMessage}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="row g-3">
               <div className="col-md-6">
                 <label className="form-label">Meter ID *</label>
@@ -463,7 +426,7 @@ export default function MeterPage() {
               </div>
 
               <div className="col-md-6">
-                <label className="form-label">Type *</label>
+                <label className="form-label shadow-none">Type *</label>
                 <select
                   className="form-control shadow-none"
                   name="type"
@@ -480,7 +443,7 @@ export default function MeterPage() {
               </div>
 
               <div className="col-md-6">
-                <label className="form-label">Communication Way *</label>
+                <label className="form-label ">Communication Way *</label>
                 <select
                   className="form-control shadow-none"
                   name="communicationWay"
@@ -575,16 +538,12 @@ export default function MeterPage() {
               </div>
 
               <div className="col-12">
-                <button 
-                  type="submit" 
-                  className="btn primaryColor w-100"
-                  disabled={loading}
-                >
-                  {loading ? "Processing..." : (isEditing ? "Update Meter" : "Create Meter")}
+                <button type="submit" className="btn primaryColor fw-bold w-100" disabled={loading}>
+                  {loading ? (isEditing ? "Updating..." : "Creating...") : (isEditing ? "Update Meter" : "Create Meter")}
                 </button>
                 {isEditing && (
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="btn btn-secondary w-100 mt-2"
                     onClick={resetForm}
                     disabled={loading}
@@ -593,11 +552,6 @@ export default function MeterPage() {
                   </button>
                 )}
               </div>
-              {formMessage && (
-                <div className={`alert mt-3 alert-${formMessageType === "success" ? "success" : "danger"}`}>
-                  {formMessage}
-                </div>
-              )}
             </form>
           </div>
         </div>
@@ -605,7 +559,7 @@ export default function MeterPage() {
 
       {/* METER TABLE */}
       {token && (
-        <div className="card shadow">
+        <div className="card shadow mb-5">
           <div className="card-header primaryColor text-white">
             <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
               <h5 className="mb-0">Meter Management</h5>
@@ -625,7 +579,7 @@ export default function MeterPage() {
                   </div>
                 </form>
                 <select
-                  className="form-select shadow-none"
+                  className="form-select "
                   value={`${sortField}:${sortOrder}`}
                   onChange={(e) => {
                     const [field, order] = e.target.value.split(':');
@@ -644,7 +598,7 @@ export default function MeterPage() {
               </div>
             </div>
           </div>
-          <div className="card-body">
+          <div className="card-body table-responsive">
             {loading ? (
               <div className="text-center my-5">
                 <div className="spinner-border text-primary" role="status">
@@ -653,65 +607,63 @@ export default function MeterPage() {
               </div>
             ) : (
               <>
-                <div className="table-container">
-                  <table className="table table-bordered table-hover">
-                    <thead>
-                      <tr>
-                        <th onClick={() => handleSort("meterId")} className="cursor-pointer titleColor">
-                          Meter ID {sortField === "meterId" && (
-                            <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
-                          )}
-                        </th>
-                        <th onClick={() => handleSort("type")} className="cursor-pointer titleColor">
-                          Type {sortField === "type" && (
-                            <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
-                          )}
-                        </th>
-                        <th className="titleColor">Communication Way</th>
-                        <th className="titleColor">Protocol Type</th>
-                        <th className="titleColor">Protocol Version</th>
-                        <th className="titleColor">Latitude</th>
-                        <th className="titleColor">Longitude</th>
-                        <th className="titleColor">Company</th>
-                        <th className="titleColor">Remark</th>
-                        <th className="titleColor">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {meters.length > 0 ? (
-                        meters.map((meter, index) => (
-                          <tr key={index}>
-                            <td><strong>{meter.meterId}</strong></td>
-                            <td>{getLabelFromValue(meter.type, meterTypes)}</td>
-                            <td>{getLabelFromValue(meter.communicationWay, communicationWays)}</td>
-                            <td>{getLabelFromValue(meter.protocolType, protocolTypes)}</td>
-                            <td>{meter.protocolVersion || "-"}</td>
-                            <td>{meter.lat || "-"}</td>
-                            <td>{meter.lng || "-"}</td>
-                            <td>{meter.company}</td>
-                            <td>{meter.remark || "-"}</td>
-                            <td>
-                              <button
-                                className="btn btn-sm btn-warning"
-                                onClick={() => handleEdit(meter)}
-                                disabled={loading}
-                              >
-                                Edit
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan="10" className="text-center text-muted py-4">
-                            No meters found
+                <table className="table table-bordered table-hover">
+                  <thead>
+                    <tr>
+                      <th onClick={() => handleSort("meterId")} className="cursor-pointer titleColor">
+                        Meter ID {sortField === "meterId" && (
+                          <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
+                        )}
+                      </th>
+                      <th onClick={() => handleSort("type")} className="cursor-pointer titleColor">
+                        Type {sortField === "type" && (
+                          <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
+                        )}
+                      </th>
+                      <th className="titleColor">Communication Way</th>
+                      <th className="titleColor">Protocol Type</th>
+                      <th className="titleColor">Protocol Version</th>
+                      <th className="titleColor">Latitude</th>
+                      <th className="titleColor">Longitude</th>
+                      <th className="titleColor">Company</th>
+                      <th className="titleColor">Remark</th>
+                      <th className="titleColor">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {meters.length > 0 ? (
+                      meters.map((meter, index) => (
+                        <tr key={index}>
+                          <td>{meter.meterId}</td>
+                          <td>{getLabelFromValue(meter.type, meterTypes)}</td>
+                          <td>{getLabelFromValue(meter.communicationWay, communicationWays)}</td>
+                          <td>{getLabelFromValue(meter.protocolType, protocolTypes)}</td>
+                          <td>{meter.protocolVersion || "-"}</td>
+                          <td>{meter.lat || "-"}</td>
+                          <td>{meter.lng || "-"}</td>
+                          <td>{meter.company}</td>
+                          <td>{meter.remark || "-"}</td>
+                          <td>
+                            <button
+                              className="btn btn-sm btn-warning"
+                              onClick={() => handleEdit(meter)}
+                              disabled={loading}
+                            >
+                              Edit
+                            </button>
                           </td>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="10" className="text-center text-muted display-5 py-4">
+                          No meters found
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+
                 {/* Pagination controls */}
                 <div className="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-3">
                   <div className="text-nowrap">
