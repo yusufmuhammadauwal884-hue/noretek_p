@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import TicketForm from "@/MainComponent/TicketForm";
 
 export default function UserDashboard() {
+  const [isClient, setIsClient] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [activeSection, setActiveSection] = useState("dashboard");
@@ -39,6 +40,11 @@ export default function UserDashboard() {
   const router = useRouter();
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
+  // ✅ Fix hydration error - only render on client side
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   // Helper to get proper ticket date
   const getTicketDate = (ticket) => {
     const dateStr = ticket.created_at || ticket.createdAt;
@@ -52,6 +58,8 @@ export default function UserDashboard() {
 
   // 🔹 Fetch user profile
   useEffect(() => {
+    if (!isClient) return;
+
     const fetchUserData = async () => {
       setIsLoading(true);
       try {
@@ -89,8 +97,7 @@ export default function UserDashboard() {
     };
 
     fetchUserData();
-    // eslint-disable-next-line
-  }, []);
+  }, [isClient]);
 
   const refreshPayments = async (email) => {
     try {
@@ -132,7 +139,6 @@ export default function UserDashboard() {
     localStorage.clear();
     sessionStorage.clear();
     router.push("/customer-signin");
-    router.refresh();
   };
 
   const handleProfileUpdate = async (e) => {
@@ -227,6 +233,21 @@ export default function UserDashboard() {
   const navigateToPaymentDashboard = () => {
     router.push("/customer_payment_dashboard");
   };
+
+  // ✅ Show loading state until client-side rendering is ready
+  if (!isClient) {
+    return (
+      <div className="d-flex justify-content-center align-items-center min-vh-100">
+        <div className="text-center">
+          <div className="spinner-border titleColor" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+          <p className="mt-2">Loading Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
 
   return (
     <>
